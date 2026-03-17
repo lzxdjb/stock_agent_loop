@@ -61,7 +61,8 @@ if __name__ == "__main__":
             prompt = problem + " " + instruction_following
             answer = example.pop("answer")
             images = example.pop("images")
-
+            print("images: ", images, "images: ", type(images))
+            print("images:", images[0], "images[0] type", type(images[0]))
             data = {
                 "data_source": data_source,
                 "prompt": [
@@ -96,6 +97,28 @@ if __name__ == "__main__":
 
     train_dataset.to_parquet(os.path.join(local_save_dir, "train.parquet"))
     test_dataset.to_parquet(os.path.join(local_save_dir, "test.parquet"))
+    
+    import json
+    def make_json_serializable(obj):
+        """Recursively replace non-JSON-serializable objects (e.g. PIL images) with 'image'."""
+        if isinstance(obj, dict):
+            return {k: make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [make_json_serializable(v) for v in obj]
+        else:
+            try:
+                json.dumps(obj)
+                return obj
+            except (TypeError, ValueError):
+                return "image"
+
+    def save_jsonl(dataset, path):
+        with open(path, "w", encoding="utf-8") as f:
+            for example in dataset:
+                f.write(json.dumps(make_json_serializable(example), ensure_ascii=False) + "\n")
+
+    save_jsonl(train_dataset, os.path.join(local_save_dir, "train.jsonl"))
+    save_jsonl(test_dataset, os.path.join(local_save_dir, "test.jsonl"))
 
     if hdfs_dir is not None:
         makedirs(hdfs_dir)

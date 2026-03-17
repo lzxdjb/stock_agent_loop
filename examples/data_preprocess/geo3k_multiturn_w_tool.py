@@ -60,9 +60,11 @@ if __name__ == "__main__":
     def make_map_fn(split):
         def process_fn(example, idx):
             problem = example.pop("problem")
+            # print("problem: ", problem, "problem_type: ", type(problem))
             prompt = problem + " " + instruction_following
             answer = example.pop("answer")
             images = example.pop("images")
+            print("images: ", images, "images: ", type(images))
             data = {
                 "data_source": data_source,
                 "prompt": [

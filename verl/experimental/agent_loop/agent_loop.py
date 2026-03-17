@@ -526,8 +526,11 @@ class AgentLoopWorker:
                     self._run_agent_loop(sampling_params, trajectory_info[i], trace=trace_this_sample, **kwargs)
                 )
             )
-        outputs = await asyncio.gather(*tasks)
+            break
 
+        outputs = await asyncio.gather(*tasks)
+        import time
+        time.sleep(100000)
         output = self._postprocess(outputs, input_non_tensor_batch=batch.non_tensor_batch)
 
         return output
@@ -1038,12 +1041,14 @@ class AgentLoopManager:
         """
 
         chunkes = prompts.chunk(len(self.agent_loop_workers))
-        outputs = await asyncio.gather(
-            *[
-                worker.generate_sequences.remote(chunk)
-                for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
-            ]
-        )
+        # outputs = await asyncio.gather(
+        #     *[
+        #         worker.generate_sequences.remote(chunk)
+        #         for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
+        #     ]
+        # )
+        output = await self.agent_loop_workers[0].generate_sequences.remote(chunkes[0])
+
         output = DataProto.concat(outputs)
 
         # calculate performance metrics

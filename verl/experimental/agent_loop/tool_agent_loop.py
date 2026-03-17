@@ -119,6 +119,44 @@ class ToolAgentLoop(AgentLoopBase):
             self.interaction_map: dict[str, BaseInteraction] = self._initialize_interactions(
                 self.interaction_config_file
             )
+            
+    def _log_turn_debug(
+            self,
+            agent_data: AgentData,
+            turn_type: str,
+            prompt_ids: list[int],
+            response_ids: list[int] | None = None,
+            tool_calls=None,
+            tool_responses=None,
+        ):
+        """Print raw debug info for a single turn."""
+        turn_num = agent_data.assistant_turns + agent_data.user_turns
+        sep = "=" * 80
+        prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
+        lines = [
+            f"\n{sep}",
+            f"[TURN DEBUG] request_id={agent_data.request_id}  turn={turn_num}  type={turn_type}",
+            f"--- PROMPT ({len(prompt_ids)} tokens) ---",
+            prompt_text,
+        ]
+        if response_ids is not None:
+            response_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
+            lines += [
+                f"--- RESPONSE ({len(response_ids)} tokens) ---",
+                response_text,
+            ]
+        if tool_calls:
+            lines += [
+                "--- TOOL CALLS ---",
+                *[f"  [{i}] {tc.name}({tc.arguments})" for i, tc in enumerate(tool_calls)],
+            ]
+        if tool_responses:
+            lines += [
+                "--- TOOL RESPONSES ---",
+                *[f"  [{i}] {r}" for i, r in enumerate(tool_responses)],
+            ]
+        lines.append(sep)
+        print("\n".join(lines), flush=True)
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
@@ -162,6 +200,7 @@ class ToolAgentLoop(AgentLoopBase):
 
         # State machine loop
         state = AgentState.PENDING
+        breakpoint()
         while state != AgentState.TERMINATED:
             if state == AgentState.PENDING:
                 state = await self._handle_pending_state(agent_data, sampling_params)
@@ -244,6 +283,15 @@ class ToolAgentLoop(AgentLoopBase):
         agent_data.response_ids = output.token_ids
         agent_data.prompt_ids += agent_data.response_ids
         agent_data.response_mask += [1] * len(agent_data.response_ids)
+        
+        # ✅ Log after generation
+        self._log_turn_debug(
+            agent_data,
+            turn_type="ASSISTANT_GENERATE",
+            prompt_ids=agent_data.prompt_ids[: -len(output.token_ids)],  # prompt before appending response
+            response_ids=output.token_ids,
+            tool_calls=agent_data.tool_calls if agent_data.tool_calls else None,
+        )
         if output.log_probs:
             agent_data.response_logprobs += output.log_probs
 
@@ -252,10 +300,13 @@ class ToolAgentLoop(AgentLoopBase):
 
         # Check termination conditions
         if not ignore_termination and len(agent_data.response_mask) >= self.response_length:
+            breakpoint()
             return AgentState.TERMINATED
         if self.max_assistant_turns and agent_data.assistant_turns >= self.max_assistant_turns:
+            breakpoint()
             return AgentState.TERMINATED
         if self.max_user_turns and agent_data.user_turns >= self.max_user_turns:
+            breakpoint()
             return AgentState.TERMINATED
 
         # Extract tool calls
@@ -291,6 +342,15 @@ class ToolAgentLoop(AgentLoopBase):
 
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
+            
+        
+        # ✅ Log tool responses before appending to prompt
+        self._log_turn_debug(
+        agent_data,
+        turn_type="TOOL_RESPONSE",
+        prompt_ids=agent_data.prompt_ids,  # full prompt so far
+        tool_responses=[r[0].text for r in responses],  # ToolResponse.text per call
+    )
 
         # Process tool responses and update multi_modal_data
         # Removed: agent_data.new_images_this_turn = []
@@ -363,6 +423,7 @@ class ToolAgentLoop(AgentLoopBase):
             )
 
         if len(agent_data.response_mask) + len(response_ids) >= self.response_length:
+            breakpoint()
             return AgentState.TERMINATED
         # Update prompt_ids and response_mask
 

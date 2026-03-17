@@ -19,6 +19,8 @@ tensorflow/my_graph/*
 .idea/
 # C extensions
 *.so
+data/*
+dataset1/*
 
 # Distribution / packaging
 .Python
