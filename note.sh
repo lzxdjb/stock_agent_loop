@@ -117,3 +117,7 @@ python vllm_quick_test.py \
     --model data/Qwen3-VL-8B-Instruct \
     --num_samples 20 \
     --temperature 0.0
+
+git config --global user.email "zhengxinglei539@gmail.com"
+git config --global user.name "lzxdjb"
+  
