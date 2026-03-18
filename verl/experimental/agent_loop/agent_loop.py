@@ -529,8 +529,7 @@ class AgentLoopWorker:
             break
 
         outputs = await asyncio.gather(*tasks)
-        import time
-        time.sleep(100000)
+        
         output = self._postprocess(outputs, input_non_tensor_batch=batch.non_tensor_batch)
 
         return output
@@ -567,6 +566,7 @@ class AgentLoopWorker:
                 data_config=DictConfigWrap(self.config.data),
             )
             output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
+            # breakpoint()
             return await self._agent_loop_postprocess(output, **kwargs)
 
     async def _agent_loop_postprocess(self, output, **kwargs) -> _InternalAgentLoopOutput:
@@ -1041,13 +1041,13 @@ class AgentLoopManager:
         """
 
         chunkes = prompts.chunk(len(self.agent_loop_workers))
-        # outputs = await asyncio.gather(
-        #     *[
-        #         worker.generate_sequences.remote(chunk)
-        #         for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
-        #     ]
-        # )
-        output = await self.agent_loop_workers[0].generate_sequences.remote(chunkes[0])
+        outputs = await asyncio.gather(
+            *[
+                worker.generate_sequences.remote(chunk)
+                for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
+            ]
+        )
+        # output = await self.agent_loop_workers[0].generate_sequences.remote(chunkes[0])
 
         output = DataProto.concat(outputs)
 

@@ -29,30 +29,16 @@ from verl.tools.schemas import OpenAIFunctionToolSchema
 from verl.utils.rollout_trace import rollout_trace_op
 
 
-def _parse_stock_code(raw: str) -> str | None:
+def _parse_stock_codes(raw: str) -> list[str]:
     """
-    Extract the first 6-digit sequence from the model's answer string.
+    Extract all 6-digit stock codes from the model's answer string.
+    Handles: "001209, 300033", "股票代码候选：001209、300033", "#### 001209", etc.
+    Returns ordered list, empty if nothing found.
+    """
+    # Strip market suffixes like .SH / .SZ wherever they appear
+    raw = re.sub(r"\.(?:SH|SZ|BJ|sh|sz|bj)\b", "", raw)
+    return re.findall(r"\b(\d{6})\b", raw)
 
-    Accepts formats like:
-        "001209"
-        "#### 001209"
-        "股票代码：001209"
-        "the stock code is 001209.SZ"
-    Returns the bare 6-digit string, or None if nothing parseable is found.
-    """
-    # Strip common prefixes the model might emit
-    raw = raw.strip()
-    # Remove market suffixes (.SH / .SZ / .BJ)
-    raw = re.sub(r"\.(SH|SZ|BJ|sh|sz|bj)$", "", raw.strip())
-    # Find first run of exactly 6 digits
-    match = re.search(r"\b(\d{6})\b", raw)
-    if match:
-        return match.group(1)
-    # Looser fallback: any 6 consecutive digits
-    match = re.search(r"(\d{6})", raw)
-    if match:
-        return match.group(1)
-    return None
 
 
 class StockChartTool(BaseTool):
@@ -103,8 +89,8 @@ class StockChartTool(BaseTool):
 
         self._instance_dict[instance_id] = {
             "ground_truth": str(ground_truth).strip(),
-            "last_answer": None,   # last parsed code the model submitted
-            "best_reward": 0.0,    # best reward seen so far this trajectory
+            "last_answers": [],      # was: "last_answer": None
+            "best_reward":  0.0,
         }
         return instance_id, ToolResponse()
 
@@ -130,69 +116,48 @@ class StockChartTool(BaseTool):
         if not isinstance(raw_answer, str):
             raw_answer = str(raw_answer)
 
-        parsed_code = _parse_stock_code(raw_answer)
+        candidates = _parse_stock_codes(raw_answer)
 
-        # ------------------------------------------------------------------
-        # Build human-readable feedback
-        # ------------------------------------------------------------------
-        if parsed_code is None:
+        if not candidates:
             feedback = (
                 f"无法从您的回答 '{raw_answer}' 中解析出有效的6位股票代码。"
-                f"请确保您提交的是纯数字的6位股票代码，例如 '001209'。"
+                f"请确保提交纯数字的6位股票代码，例如 '001209' 或 '001209, 300033'。"
             )
-            reward = -0.1
-            tool_reward = -0.1
-            state["last_answer"] = raw_answer
-            return ToolResponse(text=feedback), tool_reward, {}
-
-        # Compute absolute reward for this submission
-        reward = await self.calc_reward(instance_id, parsed_code=parsed_code)
-
-        # Incremental tool reward: penalise if no improvement over previous best
-        if reward > state["best_reward"]:
-            tool_reward = reward - state["best_reward"]   # positive delta
-            state["best_reward"] = reward
-        else:
-            tool_reward = -0.05   # penalty for redundant / regressive submission
-
-        state["last_answer"] = parsed_code
+            state["last_answers"] = []
+            return ToolResponse(text=feedback), -0.1, {}
 
         ground_truth = state["ground_truth"]
-        if reward == 1.0:
+        is_correct = ground_truth in candidates
+        reward = 1.0 if is_correct else 0.0
+
+        if reward > state["best_reward"]:
+            tool_reward = reward - state["best_reward"]
+            state["best_reward"] = reward
+        else:
+            tool_reward = -0.05
+
+        state["last_answers"] = candidates
+
+        if is_correct:
             feedback = (
-                f"✓ 正确！您提交的股票代码 {parsed_code} 与目标股票代码 {ground_truth} 完全匹配。"
+                f"✓ 正确！目标股票代码 {ground_truth} 在您的候选列表 {candidates} 中。"
             )
         else:
             feedback = (
-                f"✗ 错误。您提交的股票代码为 {parsed_code}，目标股票代码为 {ground_truth}。"
-                f"请重新分析图表特征后再试。"
+                f"✗ 错误。您的候选列表为 {candidates}，目标股票代码为 {ground_truth}。"
+                f"请重新分析后再试。"
             )
 
         return ToolResponse(text=feedback), tool_reward, {}
 
-    async def calc_reward(
-        self,
-        instance_id: str,
-        parsed_code: Optional[str] = None,
-        **kwargs,
-    ) -> float:
-        """
-        Pure reward calculation.  Called by the RL trainer at trajectory end
-        (via the reward_model pipeline) as well as internally by execute().
-
-        If parsed_code is provided directly (internal call from execute),
-        use it; otherwise fall back to the last submitted answer stored in state.
-        """
+    async def calc_reward(self, instance_id: str, parsed_code: str | None = None, **kwargs) -> float:
         state = self._instance_dict[instance_id]
         ground_truth = state["ground_truth"]
-
-        if parsed_code is None:
-            parsed_code = _parse_stock_code(state.get("last_answer") or "")
-
-        if parsed_code is None:
-            return 0.0
-
-        return 1.0 if parsed_code == ground_truth else 0.0
+        if parsed_code is not None:
+            return 1.0 if parsed_code == ground_truth else 0.0
+        # Multi-candidate path
+        candidates = state.get("last_answers") or []
+        return 1.0 if ground_truth in candidates else 0.0
 
     async def release(self, instance_id: str, **kwargs) -> None:
         """Free per-trajectory state."""

@@ -4,14 +4,22 @@ from io import BytesIO
 from PIL import Image
 import json
 from time import sleep
+import uuid
 
 
 def request_chain(json: dict, timeout=60):
     langchain_server_url = "http://190.92.231.77:880/iwencai/dialog/chain/execute"
+    trace_id = str(uuid.uuid4())
+    user_id = f"user_{uuid.uuid4().hex[:8]}"
+    session_id = f"session_{uuid.uuid4().hex}"
     langchain_headers = {
         "Host": "aime-langchain-engine-server",
         "X-Arsenal-Auth": "aime-reinforcement-learning-environment-access",
         "Content-Type": "application/json",
+        "X-Trace-Id": trace_id,
+        "X-User-Id": user_id,
+        "X-Session-Id": session_id,
+        ### need to add some id
     }
 
     response = requests.post(langchain_server_url, headers=langchain_headers, json=json, timeout=timeout)
@@ -448,10 +456,10 @@ if __name__ == '__main__':
                     # {"name":"Search", "input": "德生科技 信息安全解决方案"},
                     # {"name":"Search", "input": "ST信通(600289) 深度研究报告"},
                     # {'name': 'TickerChart', 'input': '{"codeName": "300584", "chartType": "Daily Candlestick", "startDate": "2025-05-19", "endDate": "2025-06-11", "indicator": ["MA"]}'}
-                    {'name': 'FinQuery', 'input': '茅台的股票代码·'}
+                    # {'name': 'FinQuery', 'input': '价格在65元左右的A股股票'}
                     # {"name": "VisitWeb", "input": "https://news.10jqka.com.cn/20251030/c672126342.shtml"},
                     # {"name":"FinQuery", "input": "上一周黄金价格如何"},
-                    # {'name': 'TickerChart', 'input': '{"codeName": "同花顺", "chartType": "Daily Candlestick", "startDate": "2024-11-05", "endDate": "2025-05-05", "indicator": ["MA", "MACD"]}'}
+                    {'name': 'TickerChart', 'input': '{"codeName": "同花顺", "chartType": "Daily Candlestick", "startDate": "2024-11-05", "endDate": "2025-05-05", "indicator": ["MA", "MACD"]}'}
                     # {"name":"TickerChart", "input": '{\"codeName\": \"688585.SH\", \"chartType\": \"Daily Candlestick\", \"startDate\": \"2025-04-09\", \"endDate\": \"2025-07-09\", \"indicator\": [\"MA\", \"VOL\"]}'}
                     # {\"name\": \"TickerChart\", \"input\": \"{\\\"codeName\\\": \\\"云创数据\\\", \\\"chartType\\\": \\\"Daily Candlestick\\\", \\\"startDate\\\": \\\"2025-06-17\\\", \\\"endDate\\\": \\\"2025-07-07\\\", \\\"indicator\\\": [\\\"MA\\\", \\\"MACD\\\", \\\"RSI\\\"]}\"}
                     ])

@@ -27,6 +27,42 @@ State machine
   SCORING            → call calc_stock_reward with the model's final answer
   TERMINATED         → done
 """
+
+
+# ── DEV ONLY: fake model output for tool-call testing ──────────────
+
+
+# fake_text = (
+#         "Thought: 我需要先通过金融查询工具获取截图中可能出现的股票代码。\n"
+#         "<tool_call>"
+#         '{"name": "FinQuery", "arguments": {"query": "同花顺的股票代码"}}'
+#         "</tool_call>"
+#     )
+
+# fake_text = (
+#         "Thought: 我再搜索一下相关新闻来辅助判断。\n"
+#         "<tool_call>"
+#         '{"name": "Search", "arguments": {"query": "同花顺 300033 最新动态"}}'
+#         "</tool_call>"
+#     )
+
+fake_text = (
+        "Thought: 现在获取候选股票的K线图与截图对比。\n"
+        "<tool_call>"
+        '{"name": "TickerChart", "arguments": {'
+        '"codeName": "300033", "chartType": "Daily Candlestick", '
+        '"startDate": "2025-08-28", "endDate": "2025-10-21", '
+        '"indicator": ["MA", "MACD"]}}'
+        "</tool_call>"
+    )
+
+# fake_text = (
+#         "Thought: 信息完整，我已确定股票代码。\n"
+#         "<FINISHED>\n"
+#         "股票代码：300033"
+#     )
+
+
 import asyncio
 import json
 import logging
@@ -174,6 +210,46 @@ class StockChartAgentLoop(AgentLoopBase):
 
         self.tool_parser      = ToolParser.get_tool_parser(mt.format, self.tokenizer)
         self.tool_parser_name = mt.format
+        
+
+    def _log_turn_debug(
+            self,
+            agent_data: AgentData,
+            turn_type: str,
+            prompt_ids: list[int],
+            response_ids: list[int] | None = None,
+            tool_calls=None,
+            tool_responses=None,
+        ):
+        """Print raw debug info for a single turn."""
+        turn_num = agent_data.assistant_turns + agent_data.user_turns
+        sep = "=" * 80
+        prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
+        lines = [
+            f"\n{sep}",
+            f"[TURN DEBUG] request_id={agent_data.request_id}  turn={turn_num}  type={turn_type}",
+            f"--- PROMPT ({len(prompt_ids)} tokens) ---",
+            prompt_text,
+        ]
+        # lines = []
+        if response_ids is not None:
+            response_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
+            lines += [
+                f"--- RESPONSE ({len(response_ids)} tokens) ---",
+                response_text,
+            ]
+        if tool_calls:
+            lines += [
+                "--- TOOL CALLS ---",
+                *[f"  [{i}] {tc.name}({tc.arguments})" for i, tc in enumerate(tool_calls)],
+            ]
+        if tool_responses:
+            lines += [
+                "--- TOOL RESPONSES ---",
+                *[f"  [{i}] {r}" for i, r in enumerate(tool_responses)],
+            ]
+        lines.append(sep)
+        print("\n".join(lines), flush=True)
 
     # ------------------------------------------------------------------
     # Entry point
@@ -293,7 +369,26 @@ class StockChartAgentLoop(AgentLoopBase):
                 image_data=agent_data.image_data,
                 video_data=agent_data.video_data,
             )
+    
+            # import os, types
+            # fake_ids = self.tokenizer.encode(fake_text, add_special_tokens=False)
+            # output = types.SimpleNamespace(
+            #         token_ids=fake_ids,
+            #         log_probs=None,
+            #         num_preempted=0,
+            #         routed_experts=None,
+            #         extra_fields={},
+            #     )
 
+
+        # ✅ Log after generation
+        # self._log_turn_debug(
+        #     agent_data,
+        #     turn_type="ASSISTANT_GENERATE",
+        #     prompt_ids=agent_data.prompt_ids[: -len(output.token_ids)],  # prompt before appending response
+        #     response_ids=output.token_ids,
+        #     tool_calls=agent_data.tool_calls if agent_data.tool_calls else None,
+        # )
         # ── book-keeping ─────────────────────────────────────────────────
         if agent_data.metrics.get("num_preempted") is None:
             agent_data.metrics["num_preempted"] = (
@@ -381,6 +476,13 @@ class StockChartAgentLoop(AgentLoopBase):
 
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
+            
+    #     self._log_turn_debug(
+    #     agent_data,
+    #     turn_type="TOOL_RESPONSE",
+    #     prompt_ids=agent_data.prompt_ids,  # full prompt so far
+    #     tool_responses=[r[0].text for r in responses],  # ToolResponse.text per call
+    # )
 
         for tool_response, tool_reward in responses:
             if tool_reward is not None:

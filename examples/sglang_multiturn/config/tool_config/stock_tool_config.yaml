@@ -15,7 +15,7 @@ tools:
   # External tool 1 — FinQuery
   # Used by the model to look up stock codes, prices, financial metrics, etc.
   # ──────────────────────────────────────────────────────────────────────
-  - class_name: "verl.tools.stock_finquery_tool.FinQueryTool"
+  - class_name: "verl.tools.stock_external_tools.FinQueryTool"
     config:
       type: native
     tool_schema:
@@ -38,7 +38,7 @@ tools:
   # External tool 2 — Search
   # Used by the model to search for news, industry info, company backgrounds.
   # ──────────────────────────────────────────────────────────────────────
-  - class_name: "verl.tools.stock_search_tool.SearchTool"
+  - class_name: "verl.tools.stock_external_tools.SearchTool"
     config:
       type: native
     tool_schema:
@@ -62,7 +62,7 @@ tools:
   # Used by the model to fetch a K-line chart image for a candidate stock
   # and date range so it can visually compare against the user's screenshot.
   # ──────────────────────────────────────────────────────────────────────
-  - class_name: "verl.tools.stock_tickerchart_tool.TickerChartTool"
+  - class_name: "verl.tools.stock_external_tools.TickerChartTool"
     config:
       type: native
       # Directory where fetched chart images will be cached during rollout
@@ -107,21 +107,21 @@ tools:
   # Scores the model's final 6-digit stock code answer.
   # Called by the agent loop when the model emits <FINISHED>.
   # ──────────────────────────────────────────────────────────────────────
-  - class_name: "verl.tools.stock_chart_tool.StockChartTool"
-    config:
-      type: native
-    tool_schema:
-      type: "function"
-      function:
-        name: "calc_stock_reward"
-        description: >
-          股票代码奖励计算工具。当你已经确定股票代码并准备提交最终答案时，
-          使用本工具验证你的答案是否正确。
-          正确得1.0分，错误得0.0分，无法解析得-0.1分。
-        parameters:
-          type: "object"
-          properties:
-            answer:
-              type: "string"
-              description: "你识别出的6位纯数字股票代码，例如 '001209'"
-          required: ["answer"]
+  # - class_name: "verl.tools.stock_chart_tool.StockChartTool"
+  #   config:
+  #     type: native
+  #   tool_schema:
+  #     type: "function"
+  #     function:
+  #       name: "calc_stock_reward"
+  #       description: >
+  #         股票代码奖励计算工具。当你已经确定股票代码并准备提交最终答案时，
+  #         使用本工具验证你的答案是否正确。
+  #         正确得1.0分，错误得0.0分，无法解析得-0.1分。
+  #       parameters:
+  #         type: "object"
+  #         properties:
+  #           answer:
+  #             type: "string"
+  #             description: "你识别出的6位纯数字股票代码，例如 '001209'"
+  #         required: ["answer"]

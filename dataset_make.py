@@ -201,7 +201,7 @@ def build_hf_dataset(
             # Tells the rollout server which AgentLoop subclass to use.
             # We will register "stock_chart_agent" in Task 3.
             # "agent_name": "stock_chart_agent",
-            "agent_name": "tool_agent",
+            "agent_name": "stock_chart_agent",
             "prompt": [
                 {
                     "role": "system",

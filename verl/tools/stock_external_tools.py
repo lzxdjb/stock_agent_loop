@@ -39,16 +39,23 @@ from verl.tools.schemas import OpenAIFunctionToolSchema
 from verl.utils.rollout_trace import rollout_trace_op
 
 logger = logging.getLogger(__name__)
+import uuid
 
 # ---------------------------------------------------------------------------
 # Shared HTTP helper (mirrors the original request_chain function)
 # ---------------------------------------------------------------------------
 
 _LANGCHAIN_SERVER_URL = "http://190.92.231.77:880/iwencai/dialog/chain/execute"
+trace_id = str(uuid.uuid4())
+user_id = f"user_{uuid.uuid4().hex[:8]}"
+session_id = f"session_{uuid.uuid4().hex}"
 _LANGCHAIN_HEADERS = {
     "Host": "aime-langchain-engine-server",
     "X-Arsenal-Auth": "aime-reinforcement-learning-environment-access",
     "Content-Type": "application/json",
+    "X-Trace-Id": trace_id,
+    "X-User-Id": user_id,
+    "X-Session-Id": session_id,
 }
 _DEFAULT_TIMEOUT = 60
 
@@ -331,11 +338,13 @@ class TickerChartTool(BaseTool):
             pil_image.save(cache_path)
             logger.info(f"TickerChartTool: cached chart to {cache_path}")
 
+            logger.info(f"TickerChartTool: fetched chart URL: {url}")
             feedback_text = (
                 f"已获取 {code_name} 的{chart_type}图表（{start_date} ~ {end_date}），"
-                f"指标：{indicator}。请与用户截图进行对比分析。"
+                f"指标：{indicator}。请与用户截图进行对比分析。\n"
+                f"[DEBUG] 图表URL: {url}"
             )
-            return ToolResponse(text=feedback_text, image=pil_image), 0.0, {}
+            return ToolResponse(text=feedback_text, image=[pil_image]), 0.0, {}
 
         except Exception as e:
             logger.warning(f"TickerChartTool error: {e}")

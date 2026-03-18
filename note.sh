@@ -121,3 +121,7 @@ python vllm_quick_test.py \
 git config --global user.email "zhengxinglei539@gmail.com"
 git config --global user.name "lzxdjb"
   
+
+
+export http_proxy="http://hexin:hx300033@10.244.57.246:30100"
+export https_proxy="http://hexin:hx300033@10.244.57.246:30100"

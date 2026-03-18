@@ -10,7 +10,7 @@ STOCK_AGENT_FAKE_OUTPUT=1
 train_path=data/stock_candlestick/train.parquet
 test_path=data/stock_candlestick/train.parquet
 max_prompt_length=2304
-max_response_length=10240
+max_response_length=512
 max_token_len=$((max_prompt_length + max_response_length))
 ray stop
 python3 -m verl.trainer.main_ppo --config-path=config \
