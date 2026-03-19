@@ -38,24 +38,24 @@ tools:
   # External tool 2 — Search
   # Used by the model to search for news, industry info, company backgrounds.
   # ──────────────────────────────────────────────────────────────────────
-  - class_name: "verl.tools.stock_external_tools.SearchTool"
-    config:
-      type: native
-    tool_schema:
-      type: "function"
-      function:
-        name: "Search"
-        description: >
-          搜索工具。用于搜索热点新闻、公司背景、行业资讯等信息。
-          当需要通过行业线索、公司新闻或概念板块辅助判断股票时使用本工具。
-          输入关键词或自然语言短语，不超过5个关键词，例如：'新能源汽车龙头股'。
-        parameters:
-          type: "object"
-          properties:
-            query:
-              type: "string"
-              description: "搜索关键词或自然语言短语，例如：'半导体行业最新动态'"
-          required: ["query"]
+  # - class_name: "verl.tools.stock_external_tools.SearchTool"
+  #   config:
+  #     type: native
+  #   tool_schema:
+  #     type: "function"
+  #     function:
+  #       name: "Search"
+  #       description: >
+  #         搜索工具。用于搜索热点新闻、公司背景、行业资讯等信息。
+  #         当需要通过行业线索、公司新闻或概念板块辅助判断股票时使用本工具。
+  #         输入关键词或自然语言短语，不超过5个关键词，例如：'新能源汽车龙头股'。
+  #       parameters:
+  #         type: "object"
+  #         properties:
+  #           query:
+  #             type: "string"
+  #             description: "搜索关键词或自然语言短语，例如：'半导体行业最新动态'"
+  #         required: ["query"]
 
   # ──────────────────────────────────────────────────────────────────────
   # External tool 3 — TickerChart

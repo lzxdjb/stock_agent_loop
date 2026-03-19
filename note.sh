@@ -101,6 +101,17 @@ export https_proxy="http://hexin:hx300033@10.244.57.246:30100"
 huggingface-cli download Qwen/Qwen3-VL-8B-Instruct  --local-dir ./data/Qwen3-VL-8B-Instruct
 
 
+export http_proxy="http://hexin:hx300033@10.244.57.246:30100"
+export https_proxy="http://hexin:hx300033@10.244.57.246:30100"
+huggingface-cli download Qwen/Qwen3-0.6B  --local-dir ./data/Qwen3-0.6B
+
+
+export http_proxy="http://hexin:hx300033@10.244.57.246:30100"
+export https_proxy="http://hexin:hx300033@10.244.57.246:30100"
+huggingface-cli download Qwen/Qwen3-VL-2B-Instruct  --local-dir ./data/Qwen/Qwen3-VL-2B-Instruct
+
+
+
 
 
 python dataset_make.py \
@@ -108,6 +119,20 @@ python dataset_make.py \
   --images_dir ./dataset1/Images/ \
   --system_prompt_path ./system_prompt.md \
   --local_save_dir ./data/stock_candlestick
+
+
+python dataset_make_2.py \
+  --local_dataset_path ./data/dataset/processed_merge_30-45.jsonl \
+  --images_dir ./data/dataset/ \
+  --system_prompt_path ./system_prompt.md \
+  --local_save_dir ./data/stock_candlestick_2
+
+
+python dataset_make_2_parallel.py \
+  --local_dataset_path ./data/dataset/processed_merge_30-45.jsonl \
+  --images_dir ./data/dataset/ \
+  --system_prompt_path ./system_prompt.md \
+  --local_save_dir ./data/stock_candlestick_2_parallel
 
 
 
@@ -125,3 +150,9 @@ git config --global user.name "lzxdjb"
 
 export http_proxy="http://hexin:hx300033@10.244.57.246:30100"
 export https_proxy="http://hexin:hx300033@10.244.57.246:30100"
+
+
+
+
+git remote add gitlab https://git-cc.myhexin.com:6443/leizhengxing/stock-agent-rl.git
+git push -u gitlab main

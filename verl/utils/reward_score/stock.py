@@ -92,7 +92,7 @@ def acc_reward(predict_str: str, ground_truth: str) -> float:
 def compute_score(
     predict_str: str,
     ground_truth: str,
-    format_score: float = 0.1,
+    format_score: float = 0.0
 ) -> float:
     """
     Weighted combination of accuracy and format rewards.

@@ -526,7 +526,6 @@ class AgentLoopWorker:
                     self._run_agent_loop(sampling_params, trajectory_info[i], trace=trace_this_sample, **kwargs)
                 )
             )
-            break
 
         outputs = await asyncio.gather(*tasks)
         

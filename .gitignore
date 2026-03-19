@@ -9,7 +9,7 @@
 **/wandb
 
 /pyrightconfig.json
-
+core*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
