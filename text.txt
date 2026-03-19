@@ -893,3 +893,84 @@ ray init kwargs: {'num_cpus': None, 'runtime_env': {'env_vars': {'TOKENIZERS_PAR
 [36m(vLLMHttpServer pid=234226)[0m Capturing CUDA graphs (decode, FULL):  84%|████████▍ | 43/51 [00:01<00:00, 28.44it/s]
 [36m(vLLMHttpServer pid=234226)[0m Capturing CUDA graphs (decode, FULL):  92%|█████████▏| 47/51 [00:02<00:00, 29.66it/s]
 [36m(vLLMHttpServer pid=234226)[0m Capturing CUDA graphs (decode, FULL): 100%|██████████| 51/51 [00:02<00:00, 30.54it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 51/51 [00:02<00:00, 23.13it/s]
+[36m(vLLMHttpServer pid=234226)[0m INFO:2026-03-19 05:25:38,877:Initializing a V1 LLM engine with config: model='data/Qwen/Qwen3-VL-2B-Instruct', speculative_config=None, tokenizer='data/Qwen/Qwen3-VL-2B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=262144, download_dir=None, load_format=dummy, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01), seed=0, served_model_name=data/Qwen/Qwen3-VL-2B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'level': None, 'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::kda_attention', 'vllm::sparse_attn_indexer'], 'compile_mm_encoder': False, 'compile_sizes': [], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'eliminate_noops': True, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>}, 'local_cache_dir': None}
+
+[36m(vLLMHttpServer pid=234226)[0m  'mp',
+[36m(vLLMHttpServer pid=234226)[0m  '--worker_extension_cls',
+[36m(vLLMHttpServer pid=234226)[0m  'verl.workers.rollout.vllm_rollout.utils.vLLMColocateWorkerExtension',
+[36m(vLLMHttpServer pid=234226)[0m  '--max_model_len',
+[36m(vLLMHttpServer pid=234226)[0m  '262144',
+[36m(vLLMHttpServer pid=234226)[0m  '--max_num_seqs',
+[36m(vLLMHttpServer pid=234226)[0m  '1024',
+[36m(vLLMHttpServer pid=234226)[0m  '--enable_chunked_prefill',
+[36m(vLLMHttpServer pid=234226)[0m  '--max_num_batched_tokens',
+[36m(vLLMHttpServer pid=234226)[0m  '8192',
+[36m(vLLMHttpServer pid=234226)[0m  '--enable_prefix_caching',
+[36m(vLLMHttpServer pid=234226)[0m  '--enable_sleep_mode',
+[36m(vLLMHttpServer pid=234226)[0m  '--logprobs_mode',
+[36m(vLLMHttpServer pid=234226)[0m  'processed_logprobs',
+[36m(vLLMHttpServer pid=234226)[0m  '--gpu_memory_utilization',
+[36m(vLLMHttpServer pid=234226)[0m  '0.9',
+[36m(vLLMHttpServer pid=234226)[0m  '--disable_log_stats',
+[36m(vLLMHttpServer pid=234226)[0m  '--tensor_parallel_size',
+[36m(vLLMHttpServer pid=234226)[0m  '4',
+[36m(vLLMHttpServer pid=234226)[0m  '--seed',
+[36m(vLLMHttpServer pid=234226)[0m  '0',
+[36m(vLLMHttpServer pid=234226)[0m  '--override_generation_config',
+[36m(vLLMHttpServer pid=234226)[0m  '{"temperature": 1.0, "top_k": -1, "top_p": 1, "repetition_penalty": 1.0, '
+[36m(vLLMHttpServer pid=234226)[0m  '"max_new_tokens": 512}',
+[36m(vLLMHttpServer pid=234226)[0m  '--hf_overrides',
+[36m(vLLMHttpServer pid=234226)[0m  '{}',
+[36m(vLLMHttpServer pid=234226)[0m  '--scheduling_policy',
+[36m(vLLMHttpServer pid=234226)[0m  'fcfs',
+[36m(vLLMHttpServer pid=234226)[0m  '--compilation_config',
+[36m(vLLMHttpServer pid=234226)[0m  '{"cudagraph_mode": "FULL_AND_PIECEWISE"}']
+[36m(WorkerDict pid=232336)[0m NCCL version 2.27.5+cuda12.9[32m [repeated 3x across cluster][0m
+[36m(WorkerDict pid=232334)[0m [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0[32m [repeated 11x across cluster][0m
+[36m(vLLMHttpServer pid=234226)[0m WARNING 03-19 05:24:10 [system_utils.py:136] We must use the `spawn` multiprocessing start method. Overriding VLLM_WORKER_MULTIPROC_METHOD to 'spawn'. See https://docs.vllm.ai/en/latest/usage/troubleshooting.html#python-multiprocessing for more information. Reasons: In a Ray actor and can only be spawned; CUDA is initialized
+[36m(vLLMHttpServer pid=234226)[0m WARNING 03-19 05:25:38 [api_server.py:1358] LoRA dynamic loading & unloading is enabled in the API server. This should ONLY be used for local development!
+[36m(vLLMHttpServer pid=234226)[0m WARNING 03-19 05:25:38 [model.py:1576] Default sampling parameters have been overridden by the model's Hugging Face generation config recommended from the model creator. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+[36m(DAPOTaskRunner pid=227543)[0m AgentLoopManager: ['10.244.124.246:35723']
+Error executing job with overrides: ['algorithm.adv_estimator=grpo', 'data.train_files=data/stock_candlestick_2_parallel/train.parquet', 'data.val_files=data/stock_candlestick_2_parallel/train.parquet', 'data.train_batch_size=16', 'data.gen_batch_size=16', 'data.max_prompt_length=2304', 'data.max_response_length=512', 'data.filter_overlong_prompts=True', 'data.truncation=left', 'actor_rollout_ref.model.path=data/Qwen/Qwen3-VL-2B-Instruct', 'actor_rollout_ref.actor.optim.lr=1e-6', 'actor_rollout_ref.actor.ppo_mini_batch_size=8', 'actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1', 'actor_rollout_ref.actor.use_kl_loss=True', 'actor_rollout_ref.actor.kl_loss_coef=0.01', 'actor_rollout_ref.actor.kl_loss_type=low_var_kl', 'actor_rollout_ref.actor.entropy_coeff=0', 'actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1', 'actor_rollout_ref.rollout.tensor_model_parallel_size=4', 'actor_rollout_ref.actor.ppo_max_token_len_per_gpu=2816', 'actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=2816', 'actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=2816', 'actor_rollout_ref.rollout.name=vllm', 'actor_rollout_ref.rollout.gpu_memory_utilization=0.9', 'actor_rollout_ref.rollout.n=4', 'trainer.use_legacy_worker_impl=disable', 'actor_rollout_ref.actor.megatron.tensor_model_parallel_size=4', 'actor_rollout_ref.actor.megatron.pipeline_model_parallel_size=1', 'actor_rollout_ref.actor.megatron.context_parallel_size=1', 'actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1', 'actor_rollout_ref.actor.megatron.use_mbridge=True', 'actor_rollout_ref.actor.megatron.param_offload=True', 'actor_rollout_ref.actor.megatron.optimizer_offload=True', 'actor_rollout_ref.actor.megatron.grad_offload=True', 'actor_rollout_ref.ref.megatron.param_offload=True', '+actor_rollout_ref.actor.optim.override_optimizer_config.optimizer_offload_fraction=1', '+actor_rollout_ref.actor.optim.override_optimizer_config.overlap_cpu_optimizer_d2h_h2d=True', '+actor_rollout_ref.actor.optim.override_optimizer_config.use_precision_aware_optimizer=True', '+actor_rollout_ref.actor.optim.override_optimizer_config.optimizer_cpu_offload=True', '+actor_rollout_ref.actor.megatron.override_transformer_config.recompute_method=uniform', '+actor_rollout_ref.actor.megatron.override_transformer_config.recompute_granularity=full', '+actor_rollout_ref.actor.megatron.override_transformer_config.recompute_num_layers=1', '+actor_rollout_ref.actor.megatron.override_transformer_config.gradient_accumulation_fusion=True', 'algorithm.filter_groups.enable=True', 'algorithm.filter_groups.metric=acc', 'data.gen_batch_size=8', 'trainer.critic_warmup=0', 'trainer.logger=["console", "wandb"]', 'trainer.project_name=verl_grpo_example_geo3k', 'trainer.experiment_name=qwen3_vl_30b_megatron', 'trainer.n_gpus_per_node=4', 'trainer.nnodes=1', 'trainer.save_freq=20', 'trainer.test_freq=5', 'trainer.total_epochs=5', 'actor_rollout_ref.rollout.multi_turn.tool_config_path=/mnt/data/HithinkOmniSSD/user_workspace/leizhengxing/verl/examples/sglang_multiturn/config/tool_config/stock_tool_config.yaml', 'actor_rollout_ref.rollout.multi_turn.max_tool_response_length=2048']
+Traceback (most recent call last):
+  File "/mnt/data/HithinkOmniSSD/user_workspace/leizhengxing/verl/recipe/dapo/main_dapo.py", line 112, in main
+    run_ppo(config, task_runner_class=ray.remote(num_cpus=1)(DAPOTaskRunner))
+  File "/mnt/data/HithinkOmniSSD/user_workspace/leizhengxing/verl/verl/trainer/main_ppo.py", line 99, in run_ppo
+    ray.get(runner.run.remote(config))
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/auto_init_hook.py", line 22, in auto_init_wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/client_mode_hook.py", line 104, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py", line 2972, in get
+    values, debugger_breakpoint = worker.get_objects(
+                                  ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/ray/_private/worker.py", line 1031, in get_objects
+    raise value.as_instanceof_cause()
+ray.exceptions.RayTaskError(UsageError): [36mray::DAPOTaskRunner.run()[39m (pid=227543, ip=10.244.124.246, actor_id=fb037a10ab71a74391f01fec01000000, repr=<main_dapo.DAPOTaskRunner object at 0x7f86e06db380>)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/HithinkOmniSSD/user_workspace/leizhengxing/verl/recipe/dapo/main_dapo.py", line 105, in run
+    trainer.fit()
+  File "/mnt/data/HithinkOmniSSD/user_workspace/leizhengxing/verl/recipe/dapo/dapo_ray_trainer.py", line 93, in fit
+    logger = Tracking(
+             ^^^^^^^^^
+  File "/mnt/data/HithinkOmniSSD/user_workspace/leizhengxing/verl/verl/utils/tracking.py", line 80, in __init__
+    wandb.init(project=project_name, name=experiment_name, entity=entity, config=config, settings=settings)
+  File "/usr/local/lib/python3.12/dist-packages/wandb/sdk/wandb_init.py", line 1594, in init
+    get_sentry().reraise(e)
+  File "/usr/local/lib/python3.12/dist-packages/wandb/analytics/sentry.py", line 190, in reraise
+    raise exc.with_traceback(tb)
+  File "/usr/local/lib/python3.12/dist-packages/wandb/sdk/wandb_init.py", line 1515, in init
+    wi.maybe_login(init_settings)
+  File "/usr/local/lib/python3.12/dist-packages/wandb/sdk/wandb_init.py", line 192, in maybe_login
+    wandb_login._login(
+  File "/usr/local/lib/python3.12/dist-packages/wandb/sdk/wandb_login.py", line 365, in _login
+    key, key_status = wlogin.prompt_api_key(referrer=referrer)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/wandb/sdk/wandb_login.py", line 272, in prompt_api_key
+    raise UsageError(message) from None
+wandb.errors.errors.UsageError: No API key configured. Use `wandb login` to log in.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

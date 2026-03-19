@@ -156,3 +156,6 @@ export https_proxy="http://hexin:hx300033@10.244.57.246:30100"
 
 git remote add gitlab https://git-cc.myhexin.com:6443/leizhengxing/stock-agent-rl.git
 git push -u gitlab main
+
+leizhengxing@myhexin.com
+mSuGAFTucxAJgMz38WnT
