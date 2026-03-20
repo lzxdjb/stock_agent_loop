@@ -97,7 +97,7 @@ import re
 # ---------------------------------------------------------------------------
 
 
-
+from dataclasses import field
 class AgentData:
     """Encapsulates all state variables for the agent loop. AgentData is passed to tool calling in case that
     tool may need to access full history state. User can store any tool session data in `extra_fields`."""
@@ -139,6 +139,7 @@ class AgentData:
 
         # Extra fields for dynamic addition, e.g., tool session data
         self.extra_fields: dict[str, Any] = {}
+        self.turn_segs: list[dict] = []
 
 
 class StockAgentState(Enum):
@@ -410,6 +411,15 @@ class StockChartAgentLoop(AgentLoopBase):
         agent_data.response_ids     = output.token_ids
         agent_data.prompt_ids      += agent_data.response_ids
         agent_data.response_mask   += [1] * len(agent_data.response_ids)
+        
+        # NEW: record this turn's span in response-token space
+        resp_token_count_before = sum(agent_data.response_mask) - len(output.token_ids)
+        resp_token_count_after  = sum(agent_data.response_mask)
+        agent_data.turn_segs.append({
+            "turn":       agent_data.assistant_turns,   # 1-indexed after the += above
+            "resp_start": resp_token_count_before,
+            "resp_end":   resp_token_count_after,       # exclusive
+        })
 
         if output.log_probs:
             agent_data.response_logprobs += output.log_probs

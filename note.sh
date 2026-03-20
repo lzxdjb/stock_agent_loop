@@ -160,4 +160,17 @@ git push -u gitlab main
 leizhengxing@myhexin.com
 mSuGAFTucxAJgMz38WnT
 
-try
+
+git checkout main
+git add .
+git commit -m "normal message"
+git push origin main
+
+
+
+git checkout --orphan gitlab-clean
+git add .
+git commit -m "dsw-1234 sync"
+git push gitlab gitlab-clean:main --force
+git checkout main
+git branch -D gitlab-clean

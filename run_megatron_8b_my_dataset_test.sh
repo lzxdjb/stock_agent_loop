@@ -5,7 +5,14 @@ ENGINE=${1:-vllm}
 export CUDA_DEVICE_MAX_CONNECTIONS=1 # For megatron communication/computation overlapping
 export VLLM_PROMPT_MAX_IMAGE_PIXELS=602112
 export VLLM_ALLREDUCE_USE_SYMM_MEM=0 # for vllm0.11.0 with TP
-export WANDB_KEY="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"STOCK_AGENT_FAKE_OUTPUT=1
+
+THSCC_TRAIN_CREATOR=lzx
+JOB_NAME=try
+pip install swanlab
+swanlab login --host http://10.244.209.251:8000 -k CRlhKr9zstqX9RLGOLV0V
+export SWANLAB_PROJECT=$THSCC_TRAIN_CREATOR
+export SWANLAB_EXP_NAME=$JOB_NAME
+
 train_path=data/stock_candlestick_2_parallel/train.parquet
 test_path=data/stock_candlestick_2_parallel/train.parquet
 max_prompt_length=2304
@@ -58,9 +65,9 @@ python3 -m verl.trainer.main_ppo --config-path=config \
     +actor_rollout_ref.actor.megatron.override_transformer_config.gradient_accumulation_fusion=True \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
-    trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_grpo_example_geo3k' \
-    trainer.experiment_name='qwen3_vl_30b_megatron' \
+    trainer.logger='["console","swanlab"]' \
+    trainer.project_name=$SWANLAB_PROJECT \
+    trainer.experiment_name=$SWANLAB_EXP_NAME \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \

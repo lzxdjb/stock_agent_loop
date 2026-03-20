@@ -1,346 +1,135 @@
-I once build a pipeline from multiturn RL pipeline: Below is some critcal code and procedure:
-    
-The original dataset is a huggingface dataset, which looks like:
-    {
-    'question': 'xxx',
-    'answer': '#### 72',
-}
+Multi-Agent Modeling SeeUPO abstracts multi-turn interaction tasks into sequentially-decision multiagent single-turn bandit problems, where each turn is mapped to a virtual agent t ∈ {1, 2, . . . , T} (as depicted in Figure 2). All agents share a common global state s0 ∈ SS (the initial task state). The sequencelevel action at ∈ AS of agent t corresponds to the complete response of the t-th turn. The joint action a1:T = (a1, a2, . . . , aT ) denotes the concatenation of all agents’ actions. Each agent t’s sequence-level policy πt(at|s0, a1:t−1) takes as input the global state s0 and the action history from preceding agents a1:t−1. The state transition function is implicitly modeled through sequentially executed policies: the evolution of the interaction is determined by agent t’s action selected according to policy πt(·|s0, a1:t−1). We adopt a shared reward (Team-Reward) mechanism r(s0, a1:T ), where the team reward equals the final task reward or cumulative return across all turns, ensuring all agents jointly optimize the global objective. We emphasize that this multi-agent modeling only exhibits a training-phase specificity and offers no inherent advantages for execution optimization. This abstraction constitutes a methodological shift in data treatment during the training phase, but does not correspond to a functional mechanism for multi-agent coordination during actual execution. Policy Update After modeling is completed, the optimization of Sequence-level policies is transformed into optimizing the joint policy of a multi-agent system.† SeeUPO adopts the sequential update mechanism from the HAML framework (see Appendix A), with a crucial design choice: the update order is set to the reverse of the execution order (T → T−1 → · · · → 1). This reverse update order not only resolves agent-level update conflicts by updating policies turn by turn, but also enables backward induction to achieve global optimality (see Theorem 2 in Appendix B). At each iteration k, the algorithm updates each agent’s policy sequentially following the reverse order of execution (T → T−1 → · · · → 1). The policy update process consists of three key components: (1) Policy Update Rule. For turn t in the reverse update order, by substituting the HAML into the update rule, the policy update can be expressed as: ˆπt k+1 = arg max ¯πt ∈U tˆπk ( ˆπt k ) Es0∼β ˆπk " Eat+1:T ∼ ˆπt+1:T k+1 ,at ∼ ¯πt h Atˆπk (s0, at, at+1:T ) i − Dtˆπk ( ¯πt | s0, ˆπt+1:T k+1 ) # , (3) where s0 is the sequence-level joint state (i.e., the global initial state), ˆπk denotes the joint policy at iteration k, U tˆπk ( ˆπt k) is the neighborhood operator for turn t, β ˆπk is the sampling state distribution, Eat+1:T ∼ ˆπt+1:T k+1 ,at ∼ ¯πt h Atˆπk i is the expectation of the local advantage function for turn t, and Dtˆπk is the drift functional. Crucially, under the reverse update order, each turn t considers the already-updated policies ˆπt+1:T k+1 of subsequent turns, ensuring coordination in the update process and enabling backward induction. (2) Local Advantage Function Computation. To compute the expectation of the local advantage function Eat+1:T ∼ ˆπt+1:T k+1 ,at ∼ ¯πt h Atˆπk i , SeeUPO leverages the global advantage function. Given the global advantage function ˆA ˆπk (s0, a1:T ), this expectation can be estimated: Eat+1:T ∼ ˆπt+1:T k+1 ,at ∼ ¯πt h Atˆπk (s0, at, at+1:T ) i = Ea1:T ∼ ˆπk " ¯πt(at|s0, a1:t−1) ˆπt k(at|s0, a1:t−1) − 1 ! · ˆπt+1:T k+1 (at+1:T |s0, a1:t) ˆπt+1:T k (at+1:T |s0, a1:t) · ˆA ˆπk (s0, a1:T ) # , (4) where the first term  ¯πt (at |s0,a1:t−1) ˆπt k (at |s0,a1:t−1) − 1  involves the candidate policy ¯πt (to be optimized) and the current policy ˆπt k, while the second ratio ˆπt+1:T k+1 (at+1:T |s0,a1:t ) ˆπt+1:T k (at+1:T |s0,a1:t ) involves the already-updated joint policy of subsequent turns ˆπt+1:T k+1 and the previous policy ˆπt+1:T k . Note that the −1 term in the first factor has zero gradient with respect to ¯πt and can be omitted in practical gradient computation. The computation 7  of the local advantage function effectively performs implicit credit assignment across turns (Zhong et al., 2024), as it decomposes the global advantage into turn-specific contributions by incorporating the importance sampling ratios from subsequently updated turns. (3) Global Advantage Function Computation. In the bandit setting, the global advantage function ˆA ˆπk (s0, a1:T ) can be estimated directly from sampled rewards. Specifically, for a given initial state s0 and sequence-level joint action a1:T, the global advantage function degenerates to: ˆA ˆπk (s0, a1:T ) = r(s0, a1:T ) − Ea′1:T ∼ ˆπk (·|s0)[r(s0, a′1:T )], (5) where r(s0, a1:T ) is the immediate reward and Ea′1:T ∼ ˆπk (·|s0)[r(s0, a′1:T )] is the expected reward under the current policy. This formulation provides an unbiased estimate of the advantage function in the bandit setting. Theoretical Guarantees SeeUPO inherits the monotonic improvement guarantee from the HAML framework (Theorem 1 in Appendix A). Beyond this, we establish a stronger result for the multi-turn contextual bandit setting: the reverse update order guarantees convergence to the globally optimal policy (Theorem 2 in Appendix B). The key insight is that, unlike general cooperative games where random update orders are required for Nash equilibrium convergence, the fixed sequential execution order in our setting enable backward induction. Specifically, the reverse update order ensures that when updating turn t, all subsequent turns t + 1, . . . , T have already been updated to their optimal policies given their continuation values. This allows each turn to optimize against the true optimal continuation value V∗, yielding global optimality. The complete proof is provided in Appendix B. 4.2 Practical Methods Algorithm 1: SeeUPPO-GRAE Input: Initial sequence-level joint policy π0 with parameters θ0, maximum turns T, batch size B, group size G, clipping parameter ϵ, learning rate α Output: Optimized policy πK after K iterations 1. Initialize π0 with parameters θ0 2. For k = 0, 1, . . . , K − 1: (a) Data Collection: • Sample dataset Dk = {(s0, a1:T, r)} by: – For each of B initial states s0, sample G trajectories a1:T and collect rewards r(s0, a1:T ) • Organize data into T sample pools: for each turn t ∈ {1, . . . , T}, construct pool Dt = {(s0, a1:t−1, at)} (b) Joint Advantage Estimation: • For each (s0, a1:T ) ∈ DT : – Compute joint advantage: ˆA ˆπk (s0, a1:T ) = r(s0, a1:T ) − ¯r(s0) – Initialize MT+1(s0, a1:T ) = ˆA ˆπk (s0, a1:T ) (c) Sequential Policy Update (Reverse Order): • For t = T, T−1, . . . , 1: – Update policy parameters to obtain πt θk+1 via Equation. 6: – If t > 1: * Update Mt for next batch via Equation. 8 – Else: * Set θk+1 = θ1 k+1 3. Return πK In this part, we present a concrete example of SeeUPO (Algorithm 1 presents the pseudocode). The practical implementation instantiates the theoretical framework in two key aspects: (1) adopting a PPOstyle clipping mechanism to implement the mirror operator through gradient-based updates, and (2) using GRAE for joint advantage estimation. This approach essentially combines GRAE with HAPPO (Zhong et al., 2024). We refer to this practical algorithm as SeeUPPO-GRAE, though for convenience, we still refer to it as SeeUPO in the remainder of this paper. We emphasize that SeeUPPO-GRAE is not the only instantiation of SeeUPO—the theoretical framework admits various variants by substituting different components, such as replacing the PPO-style clipping with TRPO-style trust region constraints, or replacing GRAE with other advantage estimators. The algorithm operates iteratively, with each iteration comprising data collection, advantage estimation, and sequential policy updates. SeeUPO adopts a turn-oriented batch construction approach that separately organizes samples from identical turns, as illustrated in Figure 3. This approach enables sequential policy updates by maintaining turn-level sample pools, in contrast to methods that construct batches using entire trajectories or concatenated sliced turns. For tasks with fewer than the maximum T turns, placeholder samples (e.g., Sample 6 in the figure) are introduced as no-op (null action) samples. Note that the figure demonstrates batch construction patterns using the React + Reasoning-Augmented Template paradigm (Zhai et al., 2025). PPO-Style Policy Update In our multi-turn RL setting, all turns share the same policy parameters θ. We use πθt k+1 to denote the policy after updating turn t’s data in iteration k. For notational clarity, we denote (s0, a1:T ) as a joint trajectory sample, where s0 is the initial state (query) and a1:T is the sequence-level joint action as defined in Section 4.1. Specifically, for turn t in the reverse update order (T → T−1 → · · · → 1) at iteration k, the policy update is performed to obtain πθt k+1 by computing the gradient of the policy parameters θ with respect to the following expectation: ∇θE(s0,a1:t−1,at )∼Dt h min  rt(θ)Mt+1(s0, a1:T ), clip(rt(θ), 1 ± ϵ)Mt+1(s0, a1:T ) i , (6) where Dt = {(s0, a1:t−1, at)} is the turn-specific sample pool constructed during data collection (see Algorithm 1), containing samples organized by turn t. The sequence-level importance sampling ratio rt(θ) = πθ(at |s0,a1:t−1) πθk (at |s0,a1:t−1) for turn t is computed in a manner similar to GSPO, where at denotes the action at turn t and (s0, a1:t−1) is the conditioning context (initial state and previous actions). ϵ is the clipping parameter, and Mt+1(s0, a1:T ) is a maintained quantity that captures the sequential advantage information from subsequently updated turns. The quantity Mt(s0, a1:T ) is initialized and updated sequentially to incorporate the importance sampling ratios from previously updated turns. Specifically, we initialize: MT+1(s0, a1:T ) = ˆA ˆπk (s0, a1:T ), (7) where ˆA ˆπk (s0, a1:T ) is the global advantage estimate (computed via GRAE as described below). After updating turn t, Mt(s0, a1:T ) is computed recursively: Mt(s0, a1:T ) = πθt k+1 (at|s0, a1:t−1) πθk (at|s0, a1:t−1) · Mt+1(s0, a1:T ), (8) where θt k+1 denotes the parameters after optimizing turn t, and θk denotes the parameters at the beginning of iteration k (i.e., the reference policy used for sampling). Due to parameter sharing, this sequential update mechanism ensures that Mt(s0, a1:T ) incorporates the importance sampling ratios from all previously updated turns, matching the expectation structure in Equation 4. GRAE-based Advantage Estimation In the bandit setting, the global advantage function ˆA ˆπk (s0, a1:T ) can be estimated directly from sampled rewards, as established in Equation 5. For each initial state in the batch, SeeUPO samples G different joint actions and collects the corresponding Team-Rewards. The global advantage estimate is computed as: ˆA ˆπk (s0, a1:T ) = r(s0, a1:T ) − ¯r(s0), (9) where ¯r(s0) is the mean reward over G trajectories sampled from the same initial state s0, serving as a Monte Carlo estimator of V ˆπk (s0) = Ea1:T ∼ ˆπk (·|s0)[r(s0, a1:T )]. This approach provides an unbiased estimate of the advantage function in the bandit setting, without requiring a separate critic (see Appendix H for detailed analysis). In practice, we apply batch-level normalization to the advantage estimates for numerical stability. Specifically, we normalize all advantage estimates in a batch as: ˜A = ( ˆA − μB )/σB , where μB is the batch mean and σB is the batch standard deviation. This normalization approach maintains theoretical convergence guarantees while improving training stability: since μB and σB are constants independent of the candidate policy, the argmax of the optimization problem remains unchanged, leaving the drift functional completely unaffected (see Appendix H.3.3 for detailed analysis). This is in contrast to group normalization which applies state-dependent scaling factors that can violate these properties (see Appendix H.3). Moreover, experimental results in Section 5.3.2 demonstrate that batch-level normalization performs comparably to group normalization and no normalization, while preserving the theoretical convergence properties.
 
-It first create a parquet format for multiturn RL, below is the code:
-    
+Above is a algorithm called seeUPO, which is designed for multi-turn RL: which is perfectly for my scenior. My task will using function call:
 
-def extract_solution(solution_str):
-    solution = re.search("#### (\\-?[0-9\\.\\,]+)", solution_str)
-    assert solution is not None
-    final_solution = solution.group(0)
-    final_solution = final_solution.split("#### ")[1].replace(",", "")
-    return final_solution
+The whole generation code is below
 
+class StockChartAgentLoop(AgentLoopBase):
+    """
+    Multi-turn RL agent loop for stock chart identification.
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--local_dir", default=None, help="The save directory for the preprocessed dataset.")
-    parser.add_argument("--hdfs_dir", default=None)
-    parser.add_argument("--local_dataset_path", default=None, help="The local path to the raw dataset, if it exists.")
-    parser.add_argument(
-        "--local_save_dir", default="~/data/gsm8k", help="The save directory for the preprocessed dataset."
-    )
+    Differences from the generic ToolAgentLoop:
+      * Adds a dedicated SCORING state that fires calc_stock_reward when
+        the model outputs <FINISHED>.
+      * Injects tool-call results that may include images (TickerChart)
+        back into the conversation as multi-modal content.
+      * Enforces a hard cap on external tool calls (max_tool_calls) to
+        prevent runaway API usage during rollout.
+    """
 
-    args = parser.parse_args()
-    local_dataset_path = args.local_dataset_path
-
-    data_source = "openai/gsm8k"
-
-    if local_dataset_path is not None:
-        dataset = datasets.load_dataset(local_dataset_path, "main")
-    else:
-        dataset = datasets.load_dataset(data_source, "main")
-
-    train_dataset = dataset["train"]
-    test_dataset = dataset["test"]
-
-    instruction_following = "Let's think step by step and output the final answer after `####`."
-
-    # add a row to each data item that represents a unique id
-    def make_map_fn(split):
-        def process_fn(example, idx):
-            question_raw = example.pop("question")
-
-            question = question_raw + " " + instruction_following
-
-            answer_raw = example.pop("answer")
-            solution = extract_solution(answer_raw)
-            data = {
-                "data_source": data_source,
-                "agent_name": "tool_agent",
-                "prompt": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a math expert. You are given a question and you need to solve it step by step. "
-                            "Reasoning step by step before any tool call. "
-                            "You should use the `calc_gsm8k_reward` tool after step by step solving the question, "
-                            "before generate final answer at least once and refine your answer if necessary. "
-                            "Put your final answer in the format of `#### <answer>`."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": question,
-                    },
-                ],
-                "ability": "math",
-                "reward_model": {"style": "rule", "ground_truth": solution},
-                "extra_info": {
-                    "split": split,
-                    "index": idx,
-                    "answer": answer_raw,
-                    "question": question_raw,
-                    "need_tools_kwargs": True,
-                    "tools_kwargs": {
-                        "calc_gsm8k_reward": {
-                            "create_kwargs": {"ground_truth": solution},
-                            # "execute_kwargs": {},
-                            # "calc_reward_kwargs": {},
-                            # "release_kwargs": {},
-                        },
-                    },
-                    "interaction_kwargs": {
-                        "query": question,
-                        "ground_truth": solution,
-                    },
-                },
-            }
-            return data
-
-        return process_fn
-
-    train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
-    test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
-
-    hdfs_dir = args.hdfs_dir
-    local_save_dir = args.local_dir
-    if local_save_dir is not None:
-        print("Warning: Argument 'local_dir' is deprecated. Please use 'local_save_dir' instead.")
-    else:
-        local_save_dir = args.local_save_dir
-
-    train_dataset.to_parquet(os.path.join(local_save_dir, "train.parquet"))
-    test_dataset.to_parquet(os.path.join(local_save_dir, "test.parquet"))
-
-    if hdfs_dir is not None:
-        makedirs(hdfs_dir)
-        copy(src=local_save_dir, dst=hdfs_dir)
-    
-    
-The most important part here is                 "agent_name": "tool_agent",
-
-It will use the tool_agent_loop in generation procedure:
-    
-Below is the whole role map of generation:
-First a generation server is provided:
-    
- for i in range(len(batch)):
-            trace_this_sample = i in traced_indices
-            kwargs = {k: v[i] for k, v in batch.non_tensor_batch.items()}
-            tasks.append(
-                asyncio.create_task(
-                    self._run_agent_loop(sampling_params, trajectory_info[i], trace=trace_this_sample, **kwargs)
-                )
-            )
-            break
-        outputs = await asyncio.gather(*tasks)
-    
-Each _run_agent_loop will run 
-
-            output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
-which will run a agent loop, below is the code of tool_agent 
-
-
-class AgentState(Enum):
-    PENDING = "pending"
-    GENERATING = "generating"
-    PROCESSING_TOOLS = "processing_tools"
-    TERMINATED = "terminated"
-    INTERACTING = "interacting"
-
-
-class AgentData:
-    """Encapsulates all state variables for the agent loop. AgentData is passed to tool calling in case that
-    tool may need to access full history state. User can store any tool session data in `extra_fields`."""
-
-    def __init__(
-        self,
-        messages: list[dict[str, Any]],
-        image_data: list[Image.Image],
-        video_data: list[tuple[torch.Tensor, dict[str, Any]]],
-        metrics: dict[str, Any],
-        request_id: str,
-        tools_kwargs: dict[str, Any],
-        interaction: Optional[BaseInteraction] = None,
-        interaction_kwargs: Optional[dict[str, Any]] = None,
-    ):
-        self.messages = messages
-        self.image_data = image_data
-        self.video_data = video_data
-        self.metrics = metrics
-        self.request_id = request_id
-        self.tools_kwargs = tools_kwargs
-        self.interaction = interaction
-        self.interaction_kwargs = interaction_kwargs or {}
-
-        # State variables
-        self.prompt_ids: list[int] = []
-        self.response_ids: list[int] = []
-        self.response_mask: list[int] = []
-        self.response_logprobs: list[float] = []
-        self.turn_scores: list[float] = []
-        self.tool_rewards: list[float] = []
-        self.user_turns = 0
-        self.assistant_turns = 0
-
-        # Temporary state for tool calls
-        self.tool_calls: list[FunctionCall] = []
-
-        self.routed_experts = None
-
-        # Extra fields for dynamic addition, e.g., tool session data
-        self.extra_fields: dict[str, Any] = {}
-
-
-@register("tool_agent")
-class ToolAgentLoop(AgentLoopBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Initialize tools from config file
-        self.max_user_turns = self.rollout_config.multi_turn.max_user_turns
-        self.max_assistant_turns = self.rollout_config.multi_turn.max_assistant_turns
-        self.max_parallel_calls = self.rollout_config.multi_turn.max_parallel_calls
-        self.max_tool_response_length = self.rollout_config.multi_turn.max_tool_response_length
-        self.tool_response_truncate_side = self.rollout_config.multi_turn.tool_response_truncate_side
-        tool_config_path = self.rollout_config.multi_turn.tool_config_path
+        mt = self.rollout_config.multi_turn
+        self.max_user_turns          = mt.max_user_turns
+        self.max_assistant_turns     = mt.max_assistant_turns
+        self.max_parallel_calls      = mt.max_parallel_calls
+        self.max_tool_response_length = mt.max_tool_response_length
+        self.tool_response_truncate_side = mt.tool_response_truncate_side
+        self.prompt_length           = self.rollout_config.prompt_length
+        self.response_length         = self.rollout_config.response_length
+
+        # External tools: FinQuery, Search, TickerChart
+        tool_config_path = mt.tool_config_path
         tool_list = initialize_tools_from_config(tool_config_path) if tool_config_path else []
-        self.tools = {tool.name: tool for tool in tool_list}
-        self.tool_schemas = [tool.tool_schema.model_dump(exclude_unset=True, exclude_none=True) for tool in tool_list]
-        self.tool_parser = ToolParser.get_tool_parser(self.rollout_config.multi_turn.format, self.tokenizer)
-        self.tool_parser_name = self.rollout_config.multi_turn.format
+        self.tools       = {t.name: t for t in tool_list}
+        self.tool_schemas = [
+            t.tool_schema.model_dump(exclude_unset=True, exclude_none=True)
+            for t in tool_list
+        ]
 
-        self.prompt_length = self.rollout_config.prompt_length
-        self.response_length = self.rollout_config.response_length
+        self.tool_parser      = ToolParser.get_tool_parser(mt.format, self.tokenizer)
+        self.tool_parser_name = mt.format
+        
 
-        # Initialize interactions from config file
-        self.interaction_config_file = self.rollout_config.multi_turn.interaction_config_path
-        if self.interaction_config_file:
-            self.interaction_map: dict[str, BaseInteraction] = self._initialize_interactions(
-                self.interaction_config_file
-            )
-            
-        def _log_turn_debug(
-            self,
-            agent_data: AgentData,
-            turn_type: str,
-            prompt_ids: list[int],
-            response_ids: list[int] | None = None,
-            tool_calls=None,
-            tool_responses=None,
-        ):
-            """Print raw debug info for a single turn."""
-            turn_num = agent_data.assistant_turns + agent_data.user_turns
-            sep = "=" * 80
-
-            prompt_text = self.tokenizer.decode(prompt_ids, skip_special_tokens=False)
-            lines = [
-                f"\n{sep}",
-                f"[TURN DEBUG] request_id={agent_data.request_id}  turn={turn_num}  type={turn_type}",
-                f"--- PROMPT ({len(prompt_ids)} tokens) ---",
-                prompt_text,
-            ]
-
-            if response_ids is not None:
-                response_text = self.tokenizer.decode(response_ids, skip_special_tokens=False)
-                lines += [
-                    f"--- RESPONSE ({len(response_ids)} tokens) ---",
-                    response_text,
-                ]
-
-            if tool_calls:
-                lines += [
-                    "--- TOOL CALLS ---",
-                    *[f"  [{i}] {tc.name}({tc.arguments})" for i, tc in enumerate(tool_calls)],
-                ]
-
-            if tool_responses:
-                lines += [
-                    "--- TOOL RESPONSES ---",
-                    *[f"  [{i}] {r}" for i, r in enumerate(tool_responses)],
-                ]
-
-            lines.append(sep)
-            print("\n".join(lines), flush=True)
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
         messages = list(kwargs["raw_prompt"])
 
-        # extract images and videos from messages
         multi_modal_data = await self.process_vision_info(messages)
         images = multi_modal_data.get("images")
         videos = multi_modal_data.get("videos")
 
-        metrics = {}
-        request_id = uuid4().hex
+        request_id   = uuid4().hex
         tools_kwargs = kwargs.get("tools_kwargs", {})
 
-        # Initialize interaction if needed
-        interaction = None
-        interaction_kwargs = {}
-        if self.interaction_config_file:
-            interaction_kwargs = kwargs["extra_info"]["interaction_kwargs"]
-            if "name" not in interaction_kwargs:
-                raise ValueError("'name' key is required in interaction_kwargs")
-            interaction_name = interaction_kwargs["name"]
-            if interaction_name not in self.interaction_map:
-                raise ValueError(
-                    f"Interaction '{interaction_name}' not found in interaction_map. Available interactions: "
-                    f"{list(self.interaction_map.keys())}"
-                )
-            interaction = self.interaction_map[interaction_name]
-            await interaction.start_interaction(request_id, **interaction_kwargs)
-        # Create AgentData instance to encapsulate all state
         agent_data = AgentData(
             messages=messages,
             image_data=images,
             video_data=videos,
-            metrics=metrics,
+            metrics={},
             request_id=request_id,
             tools_kwargs=tools_kwargs,
-            interaction=interaction,
-            interaction_kwargs=interaction_kwargs,
         )
 
-        # State machine loop
-        state = AgentState.PENDING
-        while state != AgentState.TERMINATED:
-            if state == AgentState.PENDING:
-                state = await self._handle_pending_state(agent_data, sampling_params)
-            elif state == AgentState.GENERATING:
-                state = await self._handle_generating_state(agent_data, sampling_params)
-            elif state == AgentState.PROCESSING_TOOLS:
-                state = await self._handle_processing_tools_state(agent_data)
-            elif state == AgentState.INTERACTING:
-                state = await self._handle_interacting_state(agent_data)
+        # ── initialise the reward tool instance ──────────────────────────
+        reward_tool   = self.tools.get("calc_stock_reward")
+        reward_instance_id = None
+        if reward_tool is not None:
+            rw_kwargs = tools_kwargs.get("calc_stock_reward", {})
+            reward_instance_id, _ = await reward_tool.create(
+                **rw_kwargs.get("create_kwargs", {})
+            )
+
+        # ── state machine ────────────────────────────────────────────────
+        state = StockAgentState.PENDING
+        while state != StockAgentState.TERMINATED:
+            if state == StockAgentState.PENDING:
+                state = await self._handle_pending(agent_data, sampling_params)
+            elif state == StockAgentState.GENERATING:
+                state = await self._handle_generating(
+                    agent_data, sampling_params, reward_instance_id
+                )
+            elif state == StockAgentState.PROCESSING_TOOLS:
+                state = await self._handle_processing_tools(agent_data)
+                
             else:
-                logger.error(f"Invalid state: {state}")
-                state = AgentState.TERMINATED
+                logger.error(f"Unknown state {state}, terminating.")
+                state = StockAgentState.TERMINATED
 
-        # Finalize output
-        response_ids = agent_data.prompt_ids[-len(agent_data.response_mask) :]
-        prompt_ids = agent_data.prompt_ids[: len(agent_data.prompt_ids) - len(agent_data.response_mask)]
-        multi_modal_data = {}
+        # ── release reward tool ──────────────────────────────────────────
+        if reward_tool is not None and reward_instance_id is not None:
+            await reward_tool.release(reward_instance_id)
+
+        # ── build output ─────────────────────────────────────────────────
+        response_ids = agent_data.prompt_ids[-len(agent_data.response_mask):]
+        prompt_ids   = agent_data.prompt_ids[: len(agent_data.prompt_ids) - len(agent_data.response_mask)]
+
+        mm_data = {}
         if agent_data.image_data is not None:
-            multi_modal_data["images"] = agent_data.image_data
+            mm_data["images"] = agent_data.image_data
         if agent_data.video_data is not None:
-            multi_modal_data["videos"] = agent_data.video_data
+            mm_data["videos"] = agent_data.video_data
 
-        output: AgentLoopOutput = AgentLoopOutput(
+        output = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
             response_mask=agent_data.response_mask[: self.response_length],
-            multi_modal_data=multi_modal_data,
-            response_logprobs=agent_data.response_logprobs[: self.response_length]
-            if agent_data.response_logprobs
-            else None,
+            multi_modal_data=mm_data,
+            response_logprobs=(
+                agent_data.response_logprobs[: self.response_length]
+                if agent_data.response_logprobs else None
+            ),
             num_turns=agent_data.user_turns + agent_data.assistant_turns + 1,
             metrics=agent_data.metrics,
             routed_experts=agent_data.routed_experts,
             extra_fields=agent_data.extra_fields,
         )
-        output.extra_fields.update({"turn_scores": agent_data.turn_scores, "tool_rewards": agent_data.tool_rewards})
+        output.extra_fields.update({
+            "turn_scores": agent_data.turn_scores,
+            "tool_rewards": agent_data.tool_rewards,
+        })
         return output
 
-    async def _handle_pending_state(self, agent_data: AgentData, sampling_params: dict[str, Any]) -> AgentState:
-        """Handle the pending state: prepare the prompt and start generation."""
+    # ------------------------------------------------------------------
+    # State handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_pending(
+        self, agent_data: AgentData, sampling_params: dict[str, Any]
+    ) -> StockAgentState:
+        """Tokenise the initial prompt (system + user message with image)."""
         prompt_ids = await self.apply_chat_template(
             agent_data.messages,
             tools=self.tool_schemas,
@@ -348,14 +137,15 @@ class ToolAgentLoop(AgentLoopBase):
             videos=agent_data.video_data,
         )
         agent_data.prompt_ids = prompt_ids
-        return AgentState.GENERATING
+        return StockAgentState.GENERATING
 
-    async def _handle_generating_state(
-        self, agent_data: AgentData, sampling_params: dict[str, Any], ignore_termination: bool = False
-    ) -> AgentState:
-        """Handle the generating state: generate model response and check for tool calls."""
-        add_messages: list[dict[str, Any]] = []
-
+    async def _handle_generating(
+        self,
+        agent_data: AgentData,
+        sampling_params: dict[str, Any],
+        reward_instance_id: str | None,
+    ) -> StockAgentState:
+        """Run the LLM for one turn and decide the next state."""
         with simple_timer("generate_sequences", agent_data.metrics):
             output: TokenOutput = await self.server_manager.generate(
                 request_id=agent_data.request_id,
@@ -364,287 +154,232 @@ class ToolAgentLoop(AgentLoopBase):
                 image_data=agent_data.image_data,
                 video_data=agent_data.video_data,
             )
-        # first time to set num_preempted
+        # ── book-keeping ─────────────────────────────────────────────────
         if agent_data.metrics.get("num_preempted") is None:
-            agent_data.metrics["num_preempted"] = output.num_preempted if output.num_preempted is not None else -1
-        # then add num_preempted to the metrics
+            agent_data.metrics["num_preempted"] = (
+                output.num_preempted if output.num_preempted is not None else -1
+            )
         else:
-            agent_data.metrics["num_preempted"] += output.num_preempted if output.num_preempted is not None else 0
+            agent_data.metrics["num_preempted"] += (
+                output.num_preempted if output.num_preempted is not None else 0
+            )
 
         if not agent_data.extra_fields:
             agent_data.extra_fields.update(output.extra_fields)
         else:
-            # Multi-round calls, only update the maximum max_global_steps.
-            max_global_steps = output.extra_fields.get("max_global_steps", None)
-            if max_global_steps:
-                agent_data.extra_fields["max_global_steps"] = max_global_steps
+            max_gs = output.extra_fields.get("max_global_steps")
+            if max_gs:
+                agent_data.extra_fields["max_global_steps"] = max_gs
 
         agent_data.assistant_turns += 1
-        agent_data.response_ids = output.token_ids
-        agent_data.prompt_ids += agent_data.response_ids
-        agent_data.response_mask += [1] * len(agent_data.response_ids)
-        
-        # ✅ Log after generation
-        self._log_turn_debug(
-            agent_data,
-            turn_type="ASSISTANT_GENERATE",
-            prompt_ids=agent_data.prompt_ids[: -len(output.token_ids)],  # prompt before appending response
-            response_ids=output.token_ids,
-            tool_calls=agent_data.tool_calls if agent_data.tool_calls else None,
-        )
+        agent_data.response_ids     = output.token_ids
+        agent_data.prompt_ids      += agent_data.response_ids
+        agent_data.response_mask   += [1] * len(agent_data.response_ids)
+
         if output.log_probs:
             agent_data.response_logprobs += output.log_probs
-
         if output.routed_experts is not None:
             agent_data.routed_experts = output.routed_experts
 
-        # Check termination conditions
-        if not ignore_termination and len(agent_data.response_mask) >= self.response_length:
-            return AgentState.TERMINATED
+        # ── hard termination guards ───────────────────────────────────────
+        if len(agent_data.response_mask) >= self.response_length:
+            return StockAgentState.TERMINATED
         if self.max_assistant_turns and agent_data.assistant_turns >= self.max_assistant_turns:
-            return AgentState.TERMINATED
+            return StockAgentState.TERMINATED
         if self.max_user_turns and agent_data.user_turns >= self.max_user_turns:
-            return AgentState.TERMINATED
+            return StockAgentState.TERMINATED
 
-        # Extract tool calls
-        tools = [tool.tool_schema for tool in self.tools.values()]
-        _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)
+        # ── decode response to inspect content ───────────────────────────
+        response_text: str = await self.loop.run_in_executor(
+            None,
+            lambda: self.tokenizer.decode(output.token_ids, skip_special_tokens=False),
+        )
 
-        # Handle interaction if needed
-        if self.interaction_config_file:
-            assistant_message = await self.loop.run_in_executor(
-                None, lambda: self.tokenizer.decode(agent_data.response_ids, skip_special_tokens=True)
-            )
-            add_messages.append({"role": "assistant", "content": assistant_message})
-            agent_data.messages.extend(add_messages)
+        # ── check for <FINISHED> ──────────────────────────────────────────
+        if "<FINISHED>" in response_text:
+            # Record assistant message before scoring
+            agent_data.messages.append({"role": "assistant", "content": response_text})
+            return StockAgentState.SCORING
 
-        # Determine next state
+        # ── check for tool calls ──────────────────────────────────────────
+        tools = [t.tool_schema for t in self.tools.values()
+                 if t.name != "calc_stock_reward"]
+        _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(
+            output.token_ids, tools
+        )
+
         if agent_data.tool_calls:
-            return AgentState.PROCESSING_TOOLS
-        elif self.interaction_config_file:
-            return AgentState.INTERACTING
-        else:
-            return AgentState.TERMINATED
+            agent_data.messages.append({"role": "assistant", "content": response_text})
+            return StockAgentState.PROCESSING_TOOLS
 
-    async def _handle_processing_tools_state(self, agent_data: AgentData) -> AgentState:
-        """Handle the processing tools state: execute tool calls and prepare tool responses."""
+        # No tool calls and no <FINISHED>: the model is mid-thought; keep generating
+        # (This handles the case where the model fills the context with reasoning text.)
+        agent_data.messages.append({"role": "assistant", "content": response_text})
+        return StockAgentState.TERMINATED
+
+    async def _handle_processing_tools(self, agent_data: AgentData) -> StockAgentState:
+        """
+        Execute FinQuery / Search / TickerChart tool calls in parallel,
+        inject results (including images) back into the conversation.
+        """
         add_messages: list[dict[str, Any]] = []
-        new_images_this_turn: list[Any] = []  # Local variable instead of agent_data attribute
+        new_images_this_turn: list[Any] = []
 
+        # Fire external tool calls (skip calc_stock_reward here — that has its own state)
         tasks = []
         tool_call_names = []
-        for tool_call in agent_data.tool_calls[: self.max_parallel_calls]:
-            tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
-            tool_call_names.append(tool_call.name)
+        for tc in agent_data.tool_calls[: self.max_parallel_calls]:
+            if tc.name == "calc_stock_reward":
+                # Should not appear here, but guard just in case
+                continue
+            tasks.append(self._call_external_tool(tc, agent_data))
+            tool_call_names.append(tc.name)
+
+        if not tasks:
+            # Nothing to execute (all calls were filtered out)
+            return StockAgentState.GENERATING
 
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
             
-        
-        # ✅ Log tool responses before appending to prompt
-        self._log_turn_debug(
-        agent_data,
-        turn_type="TOOL_RESPONSE",
-        prompt_ids=agent_data.prompt_ids,  # full prompt so far
-        tool_responses=[r[0].text for r in responses],  # ToolResponse.text per call
-    )
+    #     self._log_turn_debug(
+    #     agent_data,
+    #     turn_type="TOOL_RESPONSE",
+    #     prompt_ids=agent_data.prompt_ids,  # full prompt so far
+    #     tool_responses=[r[0].text for r in responses],  # ToolResponse.text per call
+    # )
 
-        # Process tool responses and update multi_modal_data
-        # Removed: agent_data.new_images_this_turn = []
-        for tool_response, tool_reward, _ in responses:
-            # Create message from tool response
-            if tool_response.image or tool_response.video:
-                # Multi-modal content with structured format
-                if not getattr(self.processor, "image_processor", None):
-                    raise ValueError(
-                        "Multimedia data can only be processed by `processor`, but the processor is None. "
-                        "This error is often caused if you are using a LLM model but your tool returns multimodal "
-                        "data. Plase use a vlm as the base model."
-                    )
+        for tool_response, tool_reward in responses:
+            if tool_reward is not None:
+                agent_data.tool_rewards.append(tool_reward)
+
+            # Build the tool-result message
+            if tool_response.image:
                 content = []
-                if tool_response.image:
-                    content.append({"type": "image"})
-                if tool_response.video:
-                    content.append({"type": "video"})
+                content.append({"type": "image"})
                 if tool_response.text:
                     content.append({"type": "text", "text": tool_response.text})
                 message = {"role": "tool", "content": content}
+                # Collect new images for multi-modal prompt update
+                imgs = tool_response.image if isinstance(tool_response.image, list) else [tool_response.image]
+                new_images_this_turn.extend(i for i in imgs if i is not None)
             else:
-                # Text-only content
                 message = {"role": "tool", "content": tool_response.text or ""}
 
             add_messages.append(message)
 
-            # Handle image data
-            if tool_response.image:
-                # Add new image data
-                if isinstance(tool_response.image, list):
-                    # Ensure all elements in the list are valid image objects
-                    for img in tool_response.image:
-                        if img is not None:  # Add a check to ensure the image is not None
-                            new_images_this_turn.append(img)  # Using local variable
-                else:
-                    # Ensure the image is not None
-                    if tool_response.image is not None:
-                        new_images_this_turn.append(tool_response.image)  # Using local variable
-
-            # Handle video data
-            if tool_response.video:
-                # Currently not supported, raise informative error
-                logger.warning("Multimedia type 'video' is not currently supported. Only 'image' is supported.")
-                raise NotImplementedError(
-                    "Multimedia type 'video' is not currently supported. Only 'image' is supported."
-                )
-
-            if tool_reward is not None:
-                agent_data.tool_rewards.append(tool_reward)
-
         agent_data.messages.extend(add_messages)
 
-        if self.tool_parser_name == "gpt-oss":
-            logger.info("manually format tool responses for gpt-oss")
-            tool_response_text = build_gpt_oss_tool_response_text(add_messages, tool_call_names)
-            response_ids = await self.loop.run_in_executor(
-                None, lambda: self.tokenizer.encode(tool_response_text, add_special_tokens=False)
-            )
-        else:
-            # Note that we have to pass None to the images and videos if there are no new images / videos
-            # to stay compatible with downstream image processing logic!
-            images = new_images_this_turn if new_images_this_turn else None
-            videos = None
-            response_ids = await self.apply_chat_template(
-                add_messages,
-                images=images,
-                videos=videos,
-                remove_system_prompt=True,
-            )
+        # Tokenise the tool-result messages
+        images  = new_images_this_turn if new_images_this_turn else None
+        response_ids = await self.apply_chat_template(
+            add_messages,
+            images=images,
+            videos=None,
+            remove_system_prompt=True,
+        )
 
+        # Respect response length budget
         if len(agent_data.response_mask) + len(response_ids) >= self.response_length:
-            return AgentState.TERMINATED
-        # Update prompt_ids and response_mask
+            return StockAgentState.TERMINATED
 
+        # Update image data
         if new_images_this_turn:
             if agent_data.image_data is None:
                 agent_data.image_data = []
             elif not isinstance(agent_data.image_data, list):
                 agent_data.image_data = [agent_data.image_data]
-            for img in new_images_this_turn:
-                agent_data.image_data.append(img)
+            agent_data.image_data.extend(new_images_this_turn)
 
-        agent_data.prompt_ids += response_ids
-        agent_data.response_mask += [0] * len(response_ids)
-        if agent_data.response_logprobs:
-            agent_data.response_logprobs += [0.0] * len(response_ids)
-        agent_data.user_turns += 1
-        return AgentState.GENERATING
-
-    async def _handle_interacting_state(self, agent_data: AgentData) -> AgentState:
-        """Handle the interacting state: get user input from interaction."""
-        (
-            should_terminate_sequence,
-            interaction_responses,
-            reward,
-            metrics,
-        ) = await agent_data.interaction.generate_response(
-            agent_data.request_id, agent_data.messages, **agent_data.interaction_kwargs
-        )
-        agent_data.user_turns += 1
-
-        add_messages: list[dict[str, Any]] = [{"role": "user", "content": interaction_responses}]
-        agent_data.messages.extend(add_messages)
-
-        if reward is not None:
-            agent_data.turn_scores.append(reward)
-
-        # Update prompt with user responses (similar to _handle_processing_tools_state)
-        response_ids = await self.apply_chat_template(
-            add_messages,
-            remove_system_prompt=True,
-        )
-
-        # Update prompt_ids and response_mask
-        agent_data.prompt_ids += response_ids
+        agent_data.prompt_ids    += response_ids
         agent_data.response_mask += [0] * len(response_ids)
         if agent_data.response_logprobs:
             agent_data.response_logprobs += [0.0] * len(response_ids)
 
-        # double check prompt
-        # Check termination condition
-        if should_terminate_sequence:
-            return AgentState.TERMINATED
-        else:
-            return AgentState.GENERATING
+        agent_data.user_turns += 1
+        return StockAgentState.GENERATING
 
-    async def _call_tool(
-        self, tool_call: FunctionCall, tools_kwargs: dict[str, Any], agent_data: AgentData
-    ) -> tuple[ToolResponse, float, dict]:
-        """Call tool and return tool response."""
-        tool, instance_id = None, None
+
+    # ------------------------------------------------------------------
+    # External tool dispatch  (FinQuery / Search / TickerChart)
+    # ------------------------------------------------------------------
+
+    async def _call_external_tool(
+        self,
+        tool_call: FunctionCall,
+        agent_data: AgentData,
+    ) -> tuple[ToolResponse, float | None]:
+        """
+        Dispatch a single FinQuery / Search / TickerChart call.
+
+        Returns (ToolResponse, optional_reward).
+        """
+        tool_name = tool_call.name
+        tool = self.tools.get(tool_name)
+        if tool is None:
+            return (
+                ToolResponse(text=f"未知工具：{tool_name}。可用工具：{list(self.tools.keys())}"),
+                None,
+            )
+
+        instance_id = None
         try:
-            # TODO: append malformed tool_call to the prompt: invalid function name or arguments
-            tool_name = tool_call.name
             tool_args = json.loads(tool_call.arguments)
-            tool = self.tools[tool_name]
-            kwargs = tools_kwargs.get(tool_name, {})
-            instance_id, _ = await tool.create(create_kwargs=kwargs.get("create_kwargs", {}))
-            tool_execution_response, tool_reward, res = await tool.execute(
+            kwargs    = agent_data.tools_kwargs.get(tool_name, {})
+            instance_id, _ = await tool.create(
+                create_kwargs=kwargs.get("create_kwargs", {})
+            )
+            tool_response, tool_reward, _ = await tool.execute(
                 instance_id, tool_args, agent_data=agent_data
             )
         except Exception as e:
-            logger.warning(f"Error when executing tool: {e}")
-            return (
-                ToolResponse(
-                    text=f"Error when executing tool: {e}",
-                ),
-                0.0,
-                {},
-            )
+            logger.warning(f"External tool '{tool_name}' error: {e}")
+            return ToolResponse(text=f"工具调用失败 ({tool_name}): {e}"), None
         finally:
-            if tool and instance_id:
+            if tool is not None and instance_id is not None:
                 await tool.release(instance_id)
 
-        tool_response_text = tool_execution_response.text
-        if tool_response_text and len(tool_response_text) > self.max_tool_response_length:
-            if self.tool_response_truncate_side == "left":
-                tool_response_text = tool_response_text[: self.max_tool_response_length] + "...(truncated)"
-            elif self.tool_response_truncate_side == "right":
-                tool_response_text = "(truncated)..." + tool_response_text[-self.max_tool_response_length :]
+        # Truncate over-long responses
+        text = tool_response.text or ""
+        if len(text) > self.max_tool_response_length:
+            side = self.tool_response_truncate_side
+            L    = self.max_tool_response_length
+            if side == "left":
+                text = text[:L] + "...(truncated)"
+            elif side == "right":
+                text = "(truncated)..." + text[-L:]
             else:
-                length = self.max_tool_response_length // 2
-                tool_response_text = tool_response_text[:length] + "...(truncated)..." + tool_response_text[-length:]
+                half = L // 2
+                text = text[:half] + "...(truncated)..." + text[-half:]
 
-        # Create ToolResponse from tool execution result
-        tool_response_kwargs = {"text": tool_response_text}
+        # Rebuild response with possibly-truncated text but preserve image/video
+        kw = {"text": text}
+        for attr in ("image", "video"):
+            val = getattr(tool_response, attr, None)
+            if val is not None:
+                kw[attr] = val
 
-        # Add multimedia data if present
-        for attr_name in ["image", "video"]:
-            if hasattr(tool_execution_response, attr_name):
-                attr_value = getattr(tool_execution_response, attr_name)
-                if attr_value is not None:
-                    tool_response_kwargs[attr_name] = attr_value
+        return ToolResponse(**kw), tool_reward
+    
 
-        return ToolResponse(**tool_response_kwargs), tool_reward, res
+So the whole procedure is 
 
-    def _initialize_interactions(self, interaction_config_file):
-        """Initialize interactions from configuration.
-        Returns:
-            dict[str, BaseInteraction]: A dictionary mapping interaction names to interaction instances.
-        """
-        if interaction_config_file is None:
-            return {}
-
-        interaction_map = initialize_interactions_from_config(interaction_config_file)
-        return interaction_map
-
-It will launch
-    async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
-First
-
-In the code
-                state = await self._handle_generating_state(agent_data, sampling_params)
-
-It will try to extract the tool call in the code
-_, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)
+     while state != StockAgentState.TERMINATED:
+            if state == StockAgentState.PENDING:
+                state = await self._handle_pending(agent_data, sampling_params)
+            elif state == StockAgentState.GENERATING:
+                state = await self._handle_generating(
+                    agent_data, sampling_params, reward_instance_id
+                )
+            elif state == StockAgentState.PROCESSING_TOOLS:
+                state = await self._handle_processing_tools(agent_data)
+                
+            else:
+                logger.error(f"Unknown state {state}, terminating.")
+                state = StockAgentState.TERMINATED
+                
+                
+And for the extract_tool_calls function
 
 
 @ToolParser.register("hermes")
@@ -680,307 +415,546 @@ class HermesToolParser(ToolParser):
         # remaing text exclude tool call tokens
         content = self.tool_call_regex.sub("", text)
 
-        return content, function_calls
-    
-If there exist <tool_call> and </tool_call>
-It will extract the tool_call and return the function_calls
+        return content, function_calls   
+       
+Refer to this paper: I want to split the trajectory BY THE TOOl CALL。 But when compute the loss: for example in the GRPO:
 
-And in the 
-    
-        async def _handle_processing_tools_state(self, agent_data: AgentData) -> AgentState:
+@register_policy_loss("vanilla")  # type: ignore[arg-type]
+def compute_policy_loss_vanilla(
+    old_log_prob: torch.Tensor,
+    log_prob: torch.Tensor,
+    advantages: torch.Tensor,
+    response_mask: torch.Tensor,
+    loss_agg_mode: str = "token-mean",
+    config: Optional[ActorConfig] = None,
+    rollout_is_weights: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """
+    Compute the clipped policy objective and related metrics for PPO.
 
-It will 
-            tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
+    Adapted from
+    https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1122
 
-call the function
-
- async def _call_tool(
-        self, tool_call: FunctionCall, tools_kwargs: dict[str, Any], agent_data: AgentData
-    ) -> tuple[ToolResponse, float, dict]:
-        """Call tool and return tool response."""
-        tool, instance_id = None, None
-        try:
-            # TODO: append malformed tool_call to the prompt: invalid function name or arguments
-            tool_name = tool_call.name
-            tool_args = json.loads(tool_call.arguments)
-            tool = self.tools[tool_name]
-            kwargs = tools_kwargs.get(tool_name, {})
-            instance_id, _ = await tool.create(create_kwargs=kwargs.get("create_kwargs", {}))
-            tool_execution_response, tool_reward, res = await tool.execute(
-                instance_id, tool_args, agent_data=agent_data
-            )
-For those call build:
-It needs to write the tool config yaml:
-    
-tools:
-  - class_name: "verl.tools.gsm8k_tool.Gsm8kTool"
-    config: 
-      type: native
-    tool_schema:
-      type: "function"
-      function:
-        name: "calc_gsm8k_reward"
-        description: "A tool for calculating the reward of gsm8k. (1.0 if parsed answer is correct, 0.0 if parsed answer is incorrect or not correctly parsed)"
-        parameters:
-          type: "object"
-          properties:
-            answer:
-              type: "string"
-              description: "The model's answer to the GSM8K math problem, must be a digits"
-          required: ["answer"]
-
-And a custom tool class
-
-class Gsm8kTool(BaseTool):
-    """A demo tool for calculating the reward of gsm8k.
-
-    - `get_openai_tool_schema`: return the tool schema in OpenAI format.
-    - `create`: create a tool instance for a trajectory.
-    - `execute`: execute the tool.
-    - `calc_reward`: calculate the reward respect to tool state.
-    - `release`: release the tool instance.
+    Args:
+        old_log_prob (torch.Tensor):
+            Log-probabilities of actions under the old policy, shape (batch_size, response_length).
+        log_prob (torch.Tensor):
+            Log-probabilities of actions under the current policy, shape (batch_size, response_length).
+        advantages (torch.Tensor):
+            Advantage estimates for each action, shape (batch_size, response_length).
+        response_mask (torch.Tensor):
+            Mask indicating which tokens to include in the loss, shape (batch_size, response_length).
+        loss_agg_mode (str, optional):
+            Aggregation mode for `agg_loss`. Defaults to "token-mean".
+        config: `(verl.trainer.config.ActorConfig)`:
+            config for the actor.
+        rollout_log_probs: `(torch.Tensor)`:
+            log probabilities of actions under the rollout policy, shape (batch_size, response_length).
     """
 
-    def __init__(self, config: dict, tool_schema: OpenAIFunctionToolSchema):
+    assert config is not None
+    assert not isinstance(config, AlgoConfig)
+    clip_ratio = config.clip_ratio  # Clipping parameter ε for standard PPO. See https://arxiv.org/abs/1707.06347.
+    clip_ratio_low = config.clip_ratio_low if config.clip_ratio_low is not None else clip_ratio
+    clip_ratio_high = config.clip_ratio_high if config.clip_ratio_high is not None else clip_ratio
+    clip_ratio_c = config.get(  # Lower bound of the ratio for dual-clip PPO. See https://arxiv.org/pdf/1912.09729.
+        "clip_ratio_c", 3.0
+    )
+
+    cliprange = clip_ratio
+    cliprange_low = clip_ratio_low
+    cliprange_high = clip_ratio_high
+
+    assert clip_ratio_c > 1.0, (
+        "The lower bound of the clip_ratio_c for dual-clip PPO should be greater than 1.0,"
+        + f" but get the value: {clip_ratio_c}."
+    )
+
+    negative_approx_kl = log_prob - old_log_prob
+    # Clamp negative_approx_kl for stability
+    negative_approx_kl = torch.clamp(negative_approx_kl, min=-20.0, max=20.0)
+    ratio = torch.exp(negative_approx_kl)
+    ppo_kl = verl_F.masked_mean(-negative_approx_kl, response_mask)
+
+    pg_losses1 = -advantages * ratio
+    if cliprange_low is None:
+        cliprange_low = cliprange
+    if cliprange_high is None:
+        cliprange_high = cliprange
+    pg_losses2 = -advantages * torch.clamp(
+        ratio, 1 - cliprange_low, 1 + cliprange_high
+    )  # - clip(ratio, 1-cliprange, 1+cliprange) * A
+    clip_pg_losses1 = torch.maximum(
+        pg_losses1, pg_losses2
+    )  # max(-ratio * A, -clip(ratio, 1-cliprange, 1+cliprange) * A)
+    pg_clipfrac = verl_F.masked_mean(torch.gt(pg_losses2, pg_losses1).float(), response_mask)
+
+    pg_losses3 = -advantages * clip_ratio_c
+    clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
+    pg_clipfrac_lower = verl_F.masked_mean(
+        torch.gt(clip_pg_losses1, pg_losses3) * (advantages < 0).float(), response_mask
+    )
+
+    pg_losses = torch.where(advantages < 0, clip_pg_losses2, clip_pg_losses1)
+
+    # Apply rollout correction weights if provided
+    if rollout_is_weights is not None:
+        pg_losses = pg_losses * rollout_is_weights
+
+    pg_loss = agg_loss(
+        loss_mat=pg_losses, loss_mask=response_mask, loss_agg_mode=loss_agg_mode, **config.global_batch_info
+    )
+
+    pg_metrics = {
+        "actor/pg_clipfrac": pg_clipfrac.detach().item(),
+        "actor/ppo_kl": ppo_kl.detach().item(),
+        "actor/pg_clipfrac_lower": pg_clipfrac_lower.detach().item(),
+    }
+    return pg_loss, pg_metrics
+
+It will directly the reward signal into the whole trajectory, so you need to design some method to split the whole trajectory into several segment and compute the loss individually
+
+Below is the whole loop of update policy. I guess you also need to modify:
+
+Below is the back bone of the RL training:
+    
+
+  for epoch in range(current_epoch, self.config.trainer.total_epochs):
+            for batch_dict in self.train_dataloader:
+                if hasattr(self.actor_rollout_wg, "async_calls_finalize_fn_exec"):
+                    self.actor_rollout_wg.async_calls_finalize_fn_exec(blocking=False)
+                metrics = {}
+                timing_raw = {}
+
+                with marked_timer("start_profile", timing_raw):
+                    self._start_profiling(
+                        not prev_step_profile and curr_step_profile
+                        if self.config.global_profiler.profile_continuous_steps
+                        else curr_step_profile
+                    )
+                batch: DataProto = DataProto.from_single_dict(batch_dict)
+                batch.meta_info["temperature"] = self.config.actor_rollout_ref.rollout.temperature
+
+                # add uid to batch
+                batch.non_tensor_batch["uid"] = np.array(
+                    [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
+                )
+
+                gen_batch = self._get_gen_batch(batch)
+
+                # pass global_steps to trace
+                gen_batch.meta_info["global_steps"] = self.global_steps
+                gen_batch_output = gen_batch.repeat(
+                    repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True
+                )
+
+                is_last_step = self.global_steps >= self.total_training_steps
+                with marked_timer("step", timing_raw):
+                    # generate a batch
+                    with marked_timer("gen", timing_raw, color="red"):
+                        if curr_step_profile:
+                            self.async_rollout_manager.start_profile()
+                        gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch_output)
+                        self.checkpoint_manager.sleep_replicas()
+                        if curr_step_profile:
+                            self.async_rollout_manager.stop_profile()
+
+                        timing_raw.update(gen_batch_output.meta_info["timing"])
+                        gen_batch_output.meta_info.pop("timing", None)
+
+                    if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
+                        with marked_timer("gen_max", timing_raw, color="purple"):
+                            gen_baseline_batch = deepcopy(gen_batch)
+                            gen_baseline_batch.meta_info["do_sample"] = False
+                            if curr_step_profile:
+                                self.async_rollout_manager.start_profile()
+                            gen_baseline_output = self.async_rollout_manager.generate_sequences(gen_baseline_batch)
+                            self.checkpoint_manager.sleep_replicas()
+                            if curr_step_profile:
+                                self.async_rollout_manager.stop_profile()
+                            batch = batch.union(gen_baseline_output)
+                            # compute reward model score on batch
+                            rm_scores = None
+                            if self.use_rm and "rm_scores" not in batch.batch.keys():
+                                batch_reward = self._compute_reward_colocate(batch)
+                                batch = batch.union(batch_reward)
+
+                            # Compute or extract reward for REMAX baseline
+                            reward_baseline_tensor = batch.batch["rm_scores"].sum(dim=-1)
+
+                            keys_to_pop = set(gen_baseline_output.batch.keys())
+                            if rm_scores is not None:
+                                keys_to_pop.update(rm_scores.batch.keys())
+                            batch.pop(batch_keys=list(keys_to_pop))
+
+                            batch.batch["reward_baselines"] = reward_baseline_tensor
+
+                            del rm_scores, gen_baseline_batch, gen_baseline_output
+                    # repeat to align with repeated responses in rollout
+                    batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                    batch = batch.union(gen_batch_output)
+
+                    if "response_mask" not in batch.batch.keys():
+                        batch.batch["response_mask"] = compute_response_mask(batch)
+                    # Balance the number of valid tokens across DP ranks.
+                    # NOTE: This usually changes the order of data in the `batch`,
+                    # which won't affect the advantage calculation (since it's based on uid),
+                    # but might affect the loss calculation (due to the change of mini-batching).
+                    if self.config.trainer.balance_batch:
+                        self._balance_batch(batch, metrics=metrics)
+
+                    # compute global_valid tokens
+                    batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+                    # get images_seqlens
+                    images_seqlens_all = []
+                    for multi_modal_input in batch.non_tensor_batch["multi_modal_inputs"]:
+                        if "image_grid_thw" not in multi_modal_input.keys():
+                            continue
+                        images_seqlens_all.extend(multi_modal_input["images_seqlens"].tolist())
+                    batch.meta_info["images_seqlens"] = images_seqlens_all
+                    with marked_timer("reward", timing_raw, color="yellow"):
+                        # compute reward model score
+                        if self.use_rm and "rm_scores" not in batch.batch.keys():
+                            batch_reward = self._compute_reward_colocate(batch)
+                            batch = batch.union(batch_reward)
+
+                        # extract reward_tensor and reward_extra_infos_dict for training
+                        reward_tensor, reward_extra_infos_dict = extract_reward(batch)
+
+                    # Operating Mode Selection:
+                    # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
+                    # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
+                    #   Note: π_old computed once per data batch, serves as stable reference during mini-batch updates
+                    rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
+                    bypass_recomputing_logprobs = rollout_corr_config and rollout_corr_config.get("bypass_mode", False)
+                    if bypass_recomputing_logprobs:  # Use `rollout_log_probs`
+                        from verl.trainer.ppo.rollout_corr_helper import apply_bypass_mode
+
+                        apply_bypass_mode(
+                            batch=batch,
+                            rollout_corr_config=rollout_corr_config,
+                            policy_loss_config=self.config.actor_rollout_ref.actor.policy_loss,
+                        )
+                    else:  # Recompute old_log_probs
+                        with marked_timer("old_log_prob", timing_raw, color="blue"):
+                            old_log_prob, old_log_prob_mfu = self._compute_old_log_prob(batch)
+                            entropys = old_log_prob.batch["entropys"]
+                            response_masks = batch.batch["response_mask"]
+                            actor_config = self.config.actor_rollout_ref.actor
+                            entropy_agg = agg_loss(
+                                loss_mat=entropys,
+                                loss_mask=response_masks,
+                                loss_agg_mode=actor_config.loss_agg_mode,
+                                loss_scale_factor=actor_config.loss_scale_factor,
+                            )
+                            old_log_prob_metrics = {
+                                "actor/entropy": entropy_agg.detach().item(),
+                                "perf/mfu/actor_infer": old_log_prob_mfu,
+                            }
+                            metrics.update(old_log_prob_metrics)
+                            old_log_prob.batch.pop("entropys")
+                            if "routed_experts" in batch.batch and "routed_experts" in old_log_prob.batch:
+                                raise ValueError(
+                                    "Detected conflicting router replay configuration: "
+                                    "router_replay.mode='R2' and enable_rollout_routing_replay=True "
+                                    "cannot be enabled simultaneously. "
+                                    "The enable_rollout_routing_replay option is only used in R3 mode; "
+                                    "it should not be set when using R2 mode."
+                                )
+                            batch = batch.union(old_log_prob)
+                            if "rollout_log_probs" in batch.batch.keys():
+                                # TODO: we may want to add diff of probs too.
+                                from verl.utils.debug.metrics import calculate_debug_metrics
+
+                                metrics.update(calculate_debug_metrics(batch))
+
+                    assert "old_log_probs" in batch.batch, f'"old_log_prob" not in {batch.batch.keys()=}'
+
+                    if self.use_reference_policy:
+                        # compute reference log_prob
+                        with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
+                            ref_log_prob = self._compute_ref_log_prob(batch)
+                            batch = batch.union(ref_log_prob)
+
+                    # compute values
+                    if self.use_critic:
+                        with marked_timer("values", timing_raw, color="cyan"):
+                            values = self._compute_values(batch)
+                            batch = batch.union(values)
+
+                    with marked_timer("adv", timing_raw, color="brown"):
+                        # we combine with rule-based rm
+                        reward_extra_infos_dict: dict[str, list]
+                        batch.batch["token_level_scores"] = reward_tensor
+
+                        if reward_extra_infos_dict:
+                            batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
+
+                        # compute rewards. apply_kl_penalty if available
+                        if self.config.algorithm.use_kl_in_reward:
+                            batch, kl_metrics = apply_kl_penalty(
+                                batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty
+                            )
+                            metrics.update(kl_metrics)
+                        else:
+                            batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+
+                        # Compute rollout correction: IS weights, rejection sampling, and metrics
+                        # Only runs in decoupled mode (computes once per batch using stable π_old)
+                        # In bypass mode, this is skipped - actor computes metrics from evolving π_θ vs π_rollout
+                        if (
+                            rollout_corr_config is not None
+                            and "rollout_log_probs" in batch.batch
+                            and not bypass_recomputing_logprobs  # Only in decoupled mode
+                        ):
+                            from verl.trainer.ppo.rollout_corr_helper import compute_rollout_correction_and_add_to_batch
+
+                            # Compute IS weights, apply rejection sampling, compute metrics
+                            batch, is_metrics = compute_rollout_correction_and_add_to_batch(batch, rollout_corr_config)
+                            # IS and off-policy metrics already have rollout_corr/ prefix
+                            metrics.update(is_metrics)
+
+                        # compute advantages, executed on the driver process
+                        norm_adv_by_std_in_grpo = self.config.algorithm.get(
+                            "norm_adv_by_std_in_grpo", True
+                        )  # GRPO adv normalization factor
+
+                        batch = compute_advantage(
+                            batch,
+                            adv_estimator=self.config.algorithm.adv_estimator,
+                            gamma=self.config.algorithm.gamma,
+                            lam=self.config.algorithm.lam,
+                            num_repeat=self.config.actor_rollout_ref.rollout.n,
+                            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+                            config=self.config.algorithm,
+                        )
+
+                    # update critic
+                    if self.use_critic:
+                        with marked_timer("update_critic", timing_raw, color="pink"):
+                            critic_output = self._update_critic(batch)
+                        critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
+                        metrics.update(critic_output_metrics)
+
+                    # implement critic warmup
+                    if self.config.trainer.critic_warmup <= self.global_steps:
+                        # update actor
+                        with marked_timer("update_actor", timing_raw, color="red"):
+                            actor_output = self._update_actor(batch)
+                            
+
+I suppose you need to modify the 
+_compute_old_log_prob and update_policy
+
+Below is _compute_old_log_prob
+
+ def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
+        """Compute the log probability of the responses given input_ids, attention_mask and position_ids
+
+        Args:
+            data (DataProto): a DataProto containing keys
+
+                ``input_ids``: tensor of shape [batch_size, sequence_length]. torch.int64. Note that input_ids is the
+                concatenation of prompt and response. Note that ``sequence_length = prompt_length + response_length``.
+
+                ``attention_mask``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+                ``position_ids``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+                ``responses``:  tensor of shape [batch_size, response_length]. torch.int64.
+
+        Returns:
+            DataProto: torch.Tensor: the log_prob tensor
         """
-        _tool_schema = OpenAIFunctionToolSchema.model_validate({
-            "type": "function",
-            "function": {
-                "name": "calc_gsm8k_reward",
-                "description": "A tool for calculating the reward of gsm8k",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "answer": {
-                            "type": "string",
-                            "description": "The answer to the question",
-                        },
-                    },
-                    "required": ["answer"],
-                },
-            }
-        })
-        """
-        super().__init__(config, tool_schema)
-        self._instance_dict = {}
-
-    def get_openai_tool_schema(self) -> OpenAIFunctionToolSchema:
-        return self.tool_schema
-
-    async def create(
-        self, instance_id: Optional[str] = None, ground_truth: Optional[str] = None, **kwargs
-    ) -> tuple[str, ToolResponse]:
-        if instance_id is None:
-            instance_id = str(uuid4())
-        if ground_truth is None:
-            ground_truth = kwargs.get("create_kwargs", {}).get("ground_truth", None)
-        self._instance_dict[instance_id] = {
-            "response": "",
-            "ground_truth": ground_truth,
-            "reward": 0.0,
-        }
-        return instance_id, ToolResponse()
-
-    @rollout_trace_op
-    async def execute(self, instance_id: str, parameters: dict[str, Any], **kwargs) -> tuple[ToolResponse, float, dict]:
-        answer = parameters.get("answer", "")
-        if not isinstance(answer, str):
-            answer = str(answer)
-
-        if answer.startswith("#### "):
-            self._instance_dict[instance_id]["response"] = answer
+        prev_modes = [m.training for m in self.actor_module]
+        for module in self.actor_module:
+            module.eval()
+        use_dynamic_bsz = data.meta_info.get("use_dynamic_bsz", False)
+        micro_batch_size = data.meta_info.get("micro_batch_size", None)
+        max_token_len = data.meta_info.get("max_token_len", None)
+        if use_dynamic_bsz:
+            assert max_token_len is not None, "max_token_len must be set when use_dynamic_bsz is True"
+            max_token_len = max_token_len * self.config.megatron.context_parallel_size
         else:
-            self._instance_dict[instance_id]["response"] = "#### " + answer
+            assert micro_batch_size is not None, (
+                "micro batch size is needed for forward compute when use_dynamic_bsz is False"
+            )
 
-        reward = await self.calc_reward(instance_id)
-        # penalty for non improved answer submission
-        tool_reward = 0.0 if reward > self._instance_dict[instance_id]["reward"] else -0.05
-        # update the reward
-        self._instance_dict[instance_id]["reward"] = reward
+        def compute_logprobs_fn(output, data, use_dynamic_bsz=False, indices=None):
+            response = data["responses"]
+            response_length = response.size(1)
+            log_probs = output["log_probs"][:, -response_length - 1 : -1].contiguous()
+            return {"log_probs": log_probs}
 
-        return ToolResponse(text=f"Current parsed {answer=} {reward=}"), tool_reward, {}
+        # We make recompute_old_log_prob by default here.
+        # TODO (zhangchi.usc1992): actually, this function should only return log_prob and this logic should be
+        # handled by user outside
+        recompute_old_log_prob = self.config.get("recompute_old_log_prob", True)
 
-    async def calc_reward(self, instance_id: str, **kwargs) -> float:
-        return gsm8k.compute_score(
-            self._instance_dict[instance_id]["response"],
-            self._instance_dict[instance_id]["ground_truth"],
-            method="flexible",
-            format_score=0.0,
-            score=1.0,
-        )
+        entropys = torch.Tensor()
+        if recompute_old_log_prob:
+            select_keys = ["responses", "input_ids", "attention_mask", "position_ids"]
 
-    async def release(self, instance_id: str, **kwargs) -> None:
-        del self._instance_dict[instance_id]
+            if self.enable_routing_replay and self.config.router_replay.mode == "R3":
+                assert "routed_experts" in data.batch.keys(), "routed_experts must be in data.batch.keys()"
+                select_keys.append("routed_experts")
 
+            batch = data.select(batch_keys=select_keys).batch
+            input_ids = batch["input_ids"]
+            batch_size = input_ids.size(0)
+            response = batch["responses"]
+            response_length = response.size(1)
+            with torch.no_grad():
+                output = self.forward_backward_batch(
+                    data,
+                    forward_only=True,
+                    post_process_fn=compute_logprobs_fn,
+                    calculate_entropy=calculate_entropy,
+                    use_dynamic_bsz=use_dynamic_bsz,
+                    micro_batch_size=micro_batch_size,
+                    max_token_len=max_token_len,
+                )
+                if mpu.is_pipeline_last_stage(ignore_virtual=True):
+                    # only on last rank. It should be on every tp rank
+                    if calculate_entropy:
+                        log_probs = [o[0]["log_probs"] for o in output["output"]]  # (bs, seq_size)
+                    else:
+                        log_probs = [o["log_probs"] for o in output["output"]]  # (bs, seq_size)
+                    log_probs = torch.cat(log_probs, dim=0).to(torch.float32)
+                    if use_dynamic_bsz:
+                        indices = output["indices"]
+                        indices = list(itertools.chain.from_iterable(indices))
+                        assert len(indices) == log_probs.size(0), f"{len(indices)} vs. {log_probs.size()}"
+                        revert_indices = torch.tensor(get_reverse_idx(indices), dtype=torch.long)
+                        log_probs = log_probs[revert_indices]
+                else:
+                    log_probs = torch.empty(
+                        size=(batch_size, response_length), dtype=torch.float32, device=input_ids.device
+                    )
+                log_probs = log_probs.to(get_device_id())
+                # broadcast across pp ranks
+                torch.distributed.broadcast(
+                    tensor=log_probs,
+                    src=mpu.get_pipeline_model_parallel_last_rank(),
+                    group=mpu.get_pipeline_model_parallel_group(),
+                    async_op=False,
+                )
+                log_probs = log_probs.to("cpu")
+                if calculate_entropy:
+                    # Note that o[0] is metrics, o[1] is entropy
+                    if mpu.is_pipeline_last_stage(ignore_virtual=True):
+                        entropys = torch.cat([o[1] for o in output["output"]], dim=0)
+                        entropys = entropys.to(torch.float32)
+                        if use_dynamic_bsz:
+                            indices = output["indices"]
+                            indices = list(itertools.chain.from_iterable(indices))
+                            assert len(indices) == entropys.size(0), f"{len(indices)} vs. {entropys.size()}"
+                            revert_indices = torch.tensor(get_reverse_idx(indices), dtype=torch.long)
+                            entropys = entropys[revert_indices]
+                    else:
+                        entropys = torch.empty(
+                            size=(batch_size, response_length), dtype=torch.float32, device=input_ids.device
+                        )
+                    # broadcast across pp ranks
+                    entropys = entropys.to(get_device_id())
+                    torch.distributed.broadcast(
+                        tensor=entropys,
+                        src=mpu.get_pipeline_model_parallel_last_rank(),
+                        group=mpu.get_pipeline_model_parallel_group(),
+                        async_op=False,
+                    )
+                    entropys = entropys.to("cpu")
+                layers_topk_idx = None
 
-Now I want do another job: Identifying Stocks Based on Candlestick Patterns
+                if RouterReplayHelper.is_r2_record_action(self.tf_config):
+                    # (bs, max_seq_len/response_len,local_layer_num,topk)
+                    layers_topk_idx = output["mini_layer_topk_idx_tensor"].to(torch.uint8)
+                    if use_dynamic_bsz:
+                        indices = output["indices"]
+                        indices = list(itertools.chain.from_iterable(indices))
+                        assert len(indices) == layers_topk_idx.size(0), f"{len(indices)} vs. {layers_topk_idx.size()}"
+                        revert_indices = torch.tensor(get_reverse_idx(indices), dtype=torch.long)
+                        layers_topk_idx = layers_topk_idx[revert_indices]
+                    layers_topk_idx = pp_gather(layers_topk_idx, self.tf_config)
+        # add empty cache after each compute
+        get_torch_device().empty_cache()
 
-Now I was provide a dataset as a json format:
-
-
-{"messages": [{"role": "user", "content": [{"type": "text", "text": "### 身份及任务\n你是一名普通金融分析助手，来自同花顺Hithink团队。你可以根据用户问题及用户图片分析需要哪些金融数据和信息。现在有一些可以使用的工具，通过它们可以获取金融数据及信息。我会为你提供用户问题Question，用户图片和参考信息Ovservation。请你基于现有信息，简单分析需要使用哪些工具补充获取哪些信息。\n\n### 输出格式\n当你认为需要获取信息时，回答格式如下：\nThought: 你对问题的思考和分析，基于现有的背景信息和参考信息，分析回答用户问题还需要获取哪些方面的数据和信息。你可以尽可能多的获取各方面的数据和信息。\nActionList: 你需要执行的动作列表，每一个动作由工具名称和工具输入组成。动作列表有多行，每一行的表示为：工具名称: 工具输入。\n\n当你认为规划完成时，回答格式如下：\nThought: 信息完整，我知道如何回答了。\n<FINISHED>\n\n### 可以使用的工具：\nFinQuery: 金融查询工具，使用这个工具来获取标的相关的金融数据，比如宏观数据、财务数据、行情数据、交易数据、个人账户数据、自选股等，涉及A股、美股、港股、基金、指数、宏观、可转债、期货，它的输入包括具体金融指标或带时间的指标，也可以输入多个指标用于筛选。如果输入指标过多，则需要适当拆分。例子: \"FinQuery: 苹果公司近5天股价以及涨跌幅\"\nSearch: 搜索工具，使用这个工具来搜索相关信息，类似一个搜索引擎，它的输入是自然语言短语或者关键词，用来搜索热点新闻、知识概念等，关键词最好不要超过5个。例子: \"Search: 苹果公司近期新闻\"\nTickerChart: A股取图工具，当你需要K线图、分时图、技术指标图等信息来辅助你分析问题时，使用该工具获取图片。需要输入这些字段：\"startDate\", \"codeName\", \"chartType\", \"indicator\", \"endDate\"。\"startDate\": \"Start date in the format YYYY-MM-DD\", \"endDate\": \"End date in the format YYYY-MM-DD\", \"codeName\": \"Stock code or ticker symbol\", \"chartType\": \"Type of chart to retrieve, maximum 1. Enumerate value: Intraday, Daily Candlestick, Weekly Candlestick, Monthly Candlestick\", \"indicator\": \"List of indicators to display on the chart, maximum 5. Enumerate value: MA, EMA, BIAS, VR, BRAR, WR, SMA, CCI, MTM, BBI, DMI, EMV, VOL, CR, SAR, PSY, AO, DMA, ROC, TRIX, PVT, RSI, OBV, VWAP, BOLL, MACD, KDJ\"。例子: \"TickerChart: {\"codeName\": \"300033\", \"chartType\": \"Daily Candlestick\", \"startDate\": \"2024-01-08\", \"endDate\": \"2025-05-08\", \"indicator\": [\"MA\", \"MACD\"]}\"\nChartTwinFinder: 相似股票查找工具，通过该工具可以快速检索到日K走势与图中走势相似的标的，并返回相似度以及相似时间区间。如果用户询问走势相似的标的，且图中包含一段K线走势图，可以使用该工具。如果图片是分时走势图，不需要使用该工具。需要输入这些字段: \"query\", \"url\"。 \"query\": \"相似股票查找工具的文本输入，固定为：分析与下图形态走势相近的股票\", \"url\": \"图片的URL地址\"。例子: \"ChartTwinFinder: {\"query\": \"分析与下图形态走势相近的股票\", \"url\": \"http://oss.myhexin.com.cn/iwc-web-userinfo-storage-server.model-image-q-a/bcf0d0684dc6432793e8de8436140b6d.png\"}\"\nVisitWeb: 网页解析工具，这个工具用于实时抓取与解析网页内容的工具，其主要功能是通过输入一个网页的URL，从该网页中提取结构化的信息。输入必须为url，且每次只有一个url。例子: \"VisitWeb: https://paas.myhexin.com/hithinkflow/dataview/list?tenantId=14\"\n\n### 内容要求\n你务必遵守以下原则：\n1. 你仅需要做简单的表层分析即可，不需要进行深度分析。\n2. 在Thought中不要提到具体使用的工具名称如FinQuery、Search、TicherChart、ChartTwinFinder, VisitWeb，可以说使用某类功能的工具，或使用该工具的描述，或者说明你的目的。不要提及你遵循的规则，你应当尽量表现的像一个人类。\n3. Thought内容不要过长，不需要具体做过多分析。\n4. 若你多次利用工具后仍查询不到结果，为了防止无意义的查询，你可以选择终止计划，进入回答阶段。\n5. 在ActionList中，工具输入应当包含具体的对象，不可以出现代词或引用。\n6. 尽量在一次回答时，把需要的所有工具调用都给出，但是不要使用太多的工具调用，最高不超过5个。\n7. 当规划了2-3次时候，就可以停止，不需要过于深入。\n8. 用中文回答问题。\n\n<time>\n2026-03-09 11:31:04\n</time>\n<question>\n请你结合这张交易软件的截图，确定股票代码。\n</question>\n用户上传的图片："}, {"type": "text", "text": "<img_url>Images/001205_20250828_20251021.png</img_url>"}, {"type": "image_url", "image_url": {"url": "Images/001205_20250828_20251021.png"}}]}], "choices": [{"message": {"role": "assistant", "content": [{"type": "text", "text": "xxxx", "type": "success"}
-
-As you can see, there are five tools I can use, After discussion: you only needs to use these three tools:
+        for module, mode in zip(self.actor_module, prev_modes, strict=False):
+            module.train(mode)
+        return log_probs, entropys, layers_topk_idx
     
-FinQuery Search TickerChart
-Below is the code how to use these three tools:
-    
-
-Below is the complete code of using the tools
-
-def request_chain(json: dict, timeout=60):
-    langchain_server_url = "http://190.92.231.77:880/iwencai/dialog/chain/execute"
-    langchain_headers = {
-        "Host": "aime-langchain-engine-server",
-        "X-Arsenal-Auth": "aime-reinforcement-learning-environment-access",
-        "Content-Type": "application/json",
-    }
-
-    response = requests.post(langchain_server_url, headers=langchain_headers, json=json, timeout=timeout)
-    return response
+Below is the update_policy
 
 
-def search(input):
-    obj = {"chain_name": "Search", "req_type": "nostream", "events":[{"event_name":"deep_research","event_type":"user_input"}], "human_message": input}
+ @GPUMemoryLogger(role="megatron actor", logger=logger)
+    def update_policy(self, dataloader: Iterable[DataProto], enable_mtp: bool = False) -> dict:
+        """Update the policy with an iterator of DataProto
 
-    req = request_chain(obj)
-    resp = req.json()
-    response = resp.get("response", {})
-    if not response:
-        return [f'Search工具，输入{input}，调用失败。']
+        Args:
+            dataloader (Iterable[DataProto]): an iterator over the DataProto that returns by ``make_minibatch_iterator``
+                The keys of each data batch is described in the make_minibatch_iterator.
 
-    results = response.get("result", [])
-    if not results:
-        return [f'Search工具，输入{input}，调用失败。']
-    
-    result_data = results[0]
-    raw_data: list[dict[str, str]] = result_data.get("raw_data", [])
-    parse_data = parse_search_data(input, raw_data) if raw_data else [f'Search工具，输入{input}，调用失败。']
-    return parse_data
+            enable_mtp (bool, optional): whether to enable MTP communication
 
+        Returns:
+            Dict: a dictionary containing the statistics. Note that the statistics are only valid in the last pp stage
+            and users have to combine the output in each dp rank manually.
 
-def finquery(input):
-    obj = {"chain_name": "FinQuery", "req_type": "nostream", "human_message": input}
+        """
+        metrics = {}
+        for data in dataloader:
+            if self.config.router_replay.mode in ["R2", "R3"]:
+                RouterReplay.set_global_router_replay_action(RouterReplayAction.REPLAY_FORWARD)
+            self.actor_optimizer.zero_grad()
+            # use use_contiguous_buffers_in_local_ddp and no overlap_dp_param_comm
+            for chunk in self.actor_module:
+                # if use distributed optimizer, zero grad buffer will be handled by optimizer
+                chunk.zero_grad_buffer()
 
-    req = request_chain(obj)
-    resp = req.json()
-
-    response = resp.get("response", {})
-    if not response:
-        return [f'FinQuery工具，输入{input}，调用失败。']
-
-    results = response.get("result", [])
-    if not results:
-        return [f'FinQuery工具，输入{input}，调用失败。']
-
-    result_data = results[0]
-    
-    parse_data = result_data['text']
-    return [f'取数问句: {input}\n 取数结果: {parse_data}']
-
-def ticker_chart(input, images_dir):
-    input = json.loads(input)
-    query = {
-        "startDate": input.get("startDate"),
-        "endDate": input.get("endDate"),
-        "codeName": input.get("codeName"),
-        "chartType": input.get("chartType"),
-        "indicator": input.get("indicator")
-    }
-    query = json.dumps(query, ensure_ascii=False, separators=(",", ":"))
-    req_json = r"""{
-    "chain_name": "TickerChart",
-    "req_type": "nostream",
-    "user_id": "125",
-    "session_id": "143",
-    "question_id": "143",
-    "trace_id": "1746001144320",
-    "debug": false,
-    "source": "aicubes_agent_77",
-    "human_message": "{\"startDate\":\"2023-01-01\",\"chartType\":\"Weekly Candlestick\",\"endDate\":\"2025-04-30\",\"codeName\":\"同花顺\",\"indicator\":[\"MA\",\"MACD\",\"RSI\",\"BOLL\"]}",
-    "question": "{\"startDate\":\"2023-01-01\",\"chartType\":\"Weekly Candlestick\",\"endDate\":\"2025-04-30\",\"codeName\":\"MSFT\",\"indicator\":[\"MA\",\"MACD\",\"RSI\",\"BOLL\"]}",
-    "stream": false}"""
-    req = json.loads(req_json)
-    req["human_message"] = query
-    req["question"] = query
-    resp = request_chain(req)
-    if not resp.json()['response']:
-        return [f'TickerChart工具，输入{input}，调用失败。']
-    resp = resp.json()['response']['result'][0]
-    if "media_info" not in resp:
-        return [f'TickerChart工具，输入{input}，调用失败。']
-    url = resp["media_info"]["url"]
-
-    if url is None:
-        return [f'TickerChart工具，输入{input}，调用失败。']
-    url_response = requests.get(url)
-    image_data = url_response.content
-    image = Image.open(BytesIO(image_data))
-    filename = url.split("/")[-1]
-    # 构建完整的文件路径
-    filepath = os.path.join(images_dir, filename)
-    # 将图像数据保存到文件
-    image = image.convert('RGB')
-    image.save(filepath)
-    
-    return [{"image_path": filepath, "image_url": url}] # 返回的是一个列表，里面是字典
-
-def get_tools_results(tools, images_dir=r'/mnt/HithinkOmniSSD/user_workspace/ganziliang/code/agent/check_images'):
-    if images_dir and not os.path.exists(images_dir):
-        os.makedirs(images_dir)
-    tools_results = []
-    prev_tool = None
-    
-    for tool in tools:
-        tool_name = tool['name']
-        tool_input = tool['input']
-        if prev_tool and tool_name == prev_tool and tool_name == 'Search':
-            sleep(1)
-        try:
-            if tool_name == 'ObtainInfoSummary' or tool_name == 'ObtainInfoContent':
-                result = tool_map[tool_name](tool_input, tool['theme_id'])
-            elif tool_name == 'TickerChart':
-                result = tool_map[tool_name](tool_input, images_dir)
+            calculate_entropy = self.config.entropy_coeff != 0
+            if data.meta_info.get("micro_batch_size", None) is not None:
+                micro_batch_size = data.meta_info["micro_batch_size"]
             else:
-                result = tool_map[tool_name](tool_input)
-            tools_results.extend(result)
-        except Exception as e:
-            print(f"Error running tool {tool_name}: {e}")
-        prev_tool = tool_name
-        
-    return tools_results # finquery 和 search 返回的是 list，内容是字符串。图片相关工具返回的是 list[list]。
-    
-    
-Below is some example you can use the tools:
+                micro_batch_size = self.config.ppo_micro_batch_size_per_gpu
+            max_token_len = None
+            if self.config.use_dynamic_bsz:
+                max_token_len = self.config.ppo_max_token_len_per_gpu * self.config.megatron.context_parallel_size
+            metric_micro_batch = self.forward_backward_batch(
+                data,
+                calculate_entropy=calculate_entropy,
+                use_dynamic_bsz=self.config.use_dynamic_bsz,
+                micro_batch_size=micro_batch_size,
+                max_token_len=max_token_len,
+                mini_batch_size=self.config.ppo_mini_batch_size,
+            )
 
-res = get_tools_results([                    {'name': 'FinQuery', 'input': '茅台的股票代码'}])
-    
-The output is 
-['取数问句: 茅台的股票代码·\n 取数结果: \n为您找到1条数据\n|股票代码|股票简称|\n|---|---|\n|600519.SH|贵州茅台|\n\n']
+            mtp_losses = metric_micro_batch.get("mtp_losses", None)
+            if mtp_losses is not None:
+                # mtp_losses is now in format: [{"mtp_losses/mtp_1_loss": [value1], "mtp_losses/mtp_2_loss": [value2]}]
+                for mtp_metrics_dict in mtp_losses:
+                    append_to_dict(metrics, mtp_metrics_dict)
 
+            metric_micro_batch = metric_micro_batch["output"]
+            for metric in metric_micro_batch:
+                # Note that o[0] is metrics, o[1] is entropy, o[2] is response_mask
+                append_to_dict(metrics, metric[0])  # append the metric from this micro-batch to global metrics.
 
+            update_successful, grad_norm, num_zeros_in_grad = self.actor_optimizer.step()
+            data = {"actor/grad_norm": grad_norm}
+            append_to_dict(metrics, data)
 
-res = get_tools_results([                   {'name': 'TickerChart', 'input': '{"codeName": "300584", "chartType": "Daily Candlestick", "startDate": "2025-05-19", "endDate": "2025-06-11", "indicator": ["MA"]}'}])
+            if update_successful:
+                # allgather already execute in optimizer.step in new megatron
+                pass
+            else:
+                raise NotImplementedError
 
-[{'image_path': '/mnt/HithinkOmniSSD/user_workspace/ganziliang/code/agent/check_images/d990cf52a8fc08e1f72abe5b89f6f6da_750_842.png', 'image_url': 'http://u.thsi.cn/imgsrc/sns/d990cf52a8fc08e1f72abe5b89f6f6da_750_842.png'}]
+            if self.config.router_replay.mode in ["R2", "R3"]:
+                RouterReplay.clear_global_router_replay_action()
+                RouterReplay.clear_global_indices()
 
-res = get_tools_results([                    {'name': 'FinQuery', 'input': '茅台的股票代码'}])
+        self.actor_optimizer.zero_grad()
+        get_torch_device().empty_cache()
+        return metrics
 
-['取数问句: 茅台的股票代码·\n 取数结果: \n为您找到1条数据\n|股票代码|股票简称|\n|---|---|\n|600519.SH|贵州茅台|\n\n']
-
-res = get_tools_results([                    {"name":"Search", "input": "马云"},])
-
-['搜索问句: 马云\n标题: 马云(BabySpace创办.....']
-
-The whole work flow is like: The user will give a picture as a input, the model need to first analysis it and use FinQuery Search TickerChart those three tools to find the Stock name, and then return the six serial number of the Stock name.
-
-
-The first task is to modify the system prompt and create a rl dataset.
-For the system prompt, you need to first delete TickerChart and ChartTwinFinder tools description because it doesn't need to use. And you need to write the prompt to teach the model how to use the tool base on the example I give you and latter your design of the tool class. Most importantly, you should guide the model the whole work flow (like first analysis, then make query to ask the finquery tools, after return results, Use the TickerChart to find the Candlestick Patterns, it will return a url picture like:'http://u.thsi.cn/imgsrc/sns/d990cf52a8fc08e1f72abe5b89f6f6da_750_842.png', you may need to download it and compare whether it is similar as the user's input, may be you can also use the search for help, But I don't want the model to strictly follow the pipeline I create, I just want the model to know there is some tool you can use and when you enouncter the issue, you can use those tools)
-
-The second task is to make RL dataset like geo8k, the ground truth is the image's url's first six number after the prefix "Images", ("Images/001209_20251105_20251223.png" -> 001209)
-
-The third task is to build the tool agent, tool class and the yaml, 
-
-
-First write a system prompt.
+I don't use KL and critic, So you can ignore critic update policy and ref log prob
